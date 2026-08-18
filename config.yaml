@@ -1,0 +1,28 @@
+# Filters can also be edited in the web UI: python3 main.py serve
+telegram:
+  parse_mode: HTML
+  send_photos: true
+  delay_seconds: 0.8
+poll_interval_minutes: 30
+max_send_per_run: 25
+send_on_first_run: true
+filters:
+  - name: پراید اصفهان و حومه
+    enabled: true
+    category: light
+    query: پراید
+    cities:
+      - اصفهان
+      - خمینی‌شهر
+      - نجف‌آباد
+      - فلاورجان
+    price_min_toman: 300000000
+    price_max_toman: 450000000
+    exclude_title:
+      - تصادفی
+      - چپی
+      - اسقاط
+      - موتور سوخته
+      - یاتاقان
+    max_pages: 3
+    id: 210837ed5c
