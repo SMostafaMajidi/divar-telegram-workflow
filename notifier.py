@@ -70,8 +70,8 @@ class TelegramNotifier:
         self.timeout = timeout
         self.session = requests.Session()
 
-    def send_listing(self, listing: Listing) -> None:
-        caption = format_listing(listing)
+    def send_listing(self, listing: Listing, rank: int | None = None) -> None:
+        caption = format_listing(listing, rank=rank)
         if self.send_photos and listing.image_url:
             try:
                 self._call(
@@ -96,16 +96,33 @@ class TelegramNotifier:
             },
         )
 
-    def send_text(self, text: str) -> None:
-        self._call(
-            "sendMessage",
-            {
-                "chat_id": self.chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
+    def send_text(self, text: str, reply_markup: dict[str, Any] | None = None) -> None:
+        payload: dict[str, Any] = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        self._call("sendMessage", payload)
+
+    def get_updates(self, offset: int = 0, timeout: int = 25) -> list[dict[str, Any]]:
+        url = TELEGRAM_API.format(token=self.bot_token, method="getUpdates")
+        response = self.session.get(
+            url,
+            params={
+                "offset": offset,
+                "timeout": timeout,
+                "allowed_updates": '["message"]',
             },
+            timeout=timeout + 10,
         )
+        response.raise_for_status()
+        data = response.json()
+        if not data.get("ok"):
+            raise RuntimeError(data.get("description") or "telegram error")
+        return list(data.get("result") or [])
 
     def _call(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = TELEGRAM_API.format(token=self.bot_token, method=method)
@@ -122,11 +139,15 @@ class TelegramNotifier:
         return data
 
 
-def format_listing(listing: Listing) -> str:
-    lines = [
-        f"🚗 <b>{html.escape(listing.title)}</b>",
-        f"🔎 {html.escape(listing.filter_name)}",
-    ]
+def format_listing(listing: Listing, rank: int | None = None) -> str:
+    title = html.escape(listing.title)
+    if rank is not None:
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        prefix = medals.get(rank, f"{rank}.")
+        lines = [f"{prefix} <b>{title}</b>"]
+    else:
+        lines = [f"🚗 <b>{title}</b>"]
+    lines.append(f"🔎 {html.escape(listing.filter_name)}")
     if listing.price:
         lines.append(f"💰 {html.escape(listing.price)}")
     if listing.mileage:

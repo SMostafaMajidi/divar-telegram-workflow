@@ -212,6 +212,8 @@ def update_settings(body: dict[str, Any]) -> dict[str, Any]:
             minutes = max(1, round(int(minutes) / 60))
         config["poll_interval_minutes"] = max(1, int(minutes))
         config.pop("poll_interval_seconds", None)
+    if "best_count" in body:
+        config["best_count"] = max(1, min(int(body["best_count"]), 10))
     if "max_send_per_run" in body:
         config["max_send_per_run"] = max(1, int(body["max_send_per_run"]))
     if "send_on_first_run" in body:
@@ -242,6 +244,7 @@ def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     seconds = poll_interval_seconds(config)
     return {
         "poll_interval_minutes": max(1, seconds // 60),
+        "best_count": max(1, min(int(config.get("best_count") or config.get("max_send_per_run") or 5), 10)),
         "max_send_per_run": int(config.get("max_send_per_run") or 25),
         "send_on_first_run": bool(config.get("send_on_first_run", True)),
         "send_photos": bool((config.get("telegram") or {}).get("send_photos", True)),

@@ -1,48 +1,25 @@
 # دیوار → تلگرام
 
-ورکفلو جستجوی دیوار با چند فیلتر، صفحه وب برای تنظیم فیلترها، و ارسال آگهی جدید به تلگرام.
+Web UI for Divar filters. In Telegram, send `/best` or «۵ تا بهترین» to get the top listings from active filters instead of a flood of ads.
 
-## صفحه وب
+## Web UI
 
 ```bash
 cd /home/mostafa/Documents/train/workflow
 python3 main.py serve
 ```
 
-بعد در مرورگر باز کن: [http://127.0.0.1:8765](http://127.0.0.1:8765)
+Open [http://127.0.0.1:8765](http://127.0.0.1:8765)
 
-از همان صفحه می‌توانی:
+The server also starts the Telegram bot when `.env` is set.
 
-- چند فیلتر جدا بسازی (مثلاً پراید اصفهان و یک فیلتر دیگر)
-- شهر، قیمت به میلیون تومان، و کلمات حذف را مشخص کنی
-- پیش‌نمایش آگهی‌ها را ببینی
-- آگهی جدید را به تلگرام بفرستی
-- پایش خودکار را روشن کنی
+## Telegram
 
-فیلترها در `config.yaml` ذخیره می‌شوند.
-
-## تلگرام
-
-توکن و Chat ID در فایل `.env` هستند (نه `.env.example`).
-
-1. توکن را از [@BotFather](https://t.me/BotFather) در `.env` بگذار.
-2. در تلگرام ربات خودت را باز کن و `/start` بزن.
-3. Chat ID را از صفحه وب با دکمه «خواندن Chat ID» بگیر، یا:
-
-```bash
-python3 main.py chat-id
-```
-
-بعد اتصال را تست کن:
+1. Put the bot token and chat id in `.env`.
+2. Open the bot and send `/start`.
+3. Send `۵ تا بهترین` or `/best` to receive 5 ranked ads (newer year, lower mileage, with photo).
 
 ```bash
 python3 main.py test
-```
-
-## اجرای بدون مرورگر
-
-```bash
-python3 main.py once --dry-run
 python3 main.py once
-python3 main.py watch
 ```

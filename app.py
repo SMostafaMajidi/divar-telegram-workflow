@@ -21,9 +21,12 @@ from config_store import (
     update_settings,
     upsert_filter,
 )
-from runner import get_client, preview_spec, run_filters
+from runner import get_client, preview_spec, send_best, watch_tick
+from bot import TelegramBot
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
+
+BOT = TelegramBot()
 
 
 class Watcher:
@@ -48,7 +51,7 @@ class Watcher:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
-                result = run_filters(dry_run=False)
+                result = watch_tick()
                 self.last_message = result.get("message") or "Done."
             except Exception as exc:
                 self.last_message = str(exc)
@@ -78,7 +81,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/status":
                 status = public_settings()
                 status["watching"] = WATCHER.running
-                status["last_message"] = WATCHER.last_message
+                status["bot_running"] = BOT.running
+                status["last_message"] = WATCHER.last_message or BOT.last_message
                 return self._json(status)
             if path == "/api/cities":
                 q = (query.get("q") or [""])[0]
@@ -101,9 +105,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/preview":
                 return self._json(preview_spec(body))
             if path == "/api/run":
-                ids = body.get("ids") or None
-                dry_run = bool(body.get("dry_run"))
-                return self._json(run_filters(ids, dry_run=dry_run))
+                return self._json(send_best(body.get("count")))
             if path == "/api/watch":
                 action = str(body.get("action") or "").strip()
                 if action == "start":
@@ -117,6 +119,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(
                     {
                         "watching": WATCHER.running,
+                        "bot_running": BOT.running,
                         "last_message": WATCHER.last_message,
                     }
                 )
@@ -212,12 +215,17 @@ class ReuseServer(ThreadingHTTPServer):
 def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
     load_dotenv()
     load_config()
+    if public_settings()["telegram_ready"]:
+        BOT.start()
+        print("Telegram bot listening for /best", flush=True)
     server = ReuseServer((host, port), Handler)
     print(f"Filter page: http://127.0.0.1:{port}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nServer stopped.")
+        BOT.stop()
+        WATCHER.stop()
         server.server_close()
 
 

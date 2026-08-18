@@ -4,7 +4,7 @@ telegram:
   send_photos: true
   delay_seconds: 0.8
 poll_interval_minutes: 30
-max_send_per_run: 25
+best_count: 5
 send_on_first_run: true
 filters:
   - name: پراید اصفهان و حومه

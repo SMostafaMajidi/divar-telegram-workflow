@@ -23,6 +23,7 @@ const els = {
   excludeInput: $("#exclude-input"),
   excludeChips: $("#exclude-chips"),
   telegramPill: $("#telegram-pill"),
+  botPill: $("#bot-pill"),
   watchPill: $("#watch-pill"),
   watchBtn: $("#watch-btn"),
   runBtn: $("#run-btn"),
@@ -152,13 +153,14 @@ function renderStatus() {
       ? "Chat ID ندارد"
       : "تلگرام تنظیم نشده";
   els.telegramPill.className = `pill ${ready ? "ok" : "warn"}`;
+  els.botPill.textContent = state.status.bot_running ? "ربات روشن" : "ربات خاموش";
+  els.botPill.className = `pill ${state.status.bot_running ? "ok" : ""}`;
   els.watchPill.textContent = state.status.watching ? "پایش روشن" : "پایش خاموش";
   els.watchPill.className = `pill ${state.status.watching ? "ok" : ""}`;
   els.watchBtn.textContent = state.status.watching ? "توقف پایش" : "شروع پایش";
   els.settings.poll_interval_minutes.value = state.status.poll_interval_minutes || 3;
-  els.settings.max_send_per_run.value = state.status.max_send_per_run || 25;
+  els.settings.best_count.value = state.status.best_count || 5;
   els.settings.send_photos.checked = !!state.status.send_photos;
-  els.settings.send_on_first_run.checked = !!state.status.send_on_first_run;
 
   const needsChat = hasToken && !state.status.telegram_chat;
   els.telegramSetup.hidden = !needsChat;
@@ -391,7 +393,7 @@ els.addBtn.addEventListener("click", () => openEditor());
 
 els.runBtn.addEventListener("click", async () => {
   els.runBtn.disabled = true;
-  toast("در حال ارسال آگهی‌های جدید به تلگرام…");
+  toast("در حال انتخاب ۵ آگهی برتر…");
   try {
     const data = await api("/api/run", { method: "POST", body: {} });
     toast(data.message, "ok");
@@ -429,7 +431,7 @@ els.watchBtn.addEventListener("click", async () => {
     const data = await api("/api/watch", { method: "POST", body: { action } });
     state.status.watching = data.watching;
     renderStatus();
-    toast(data.watching ? "پایش هر چند دقیقه یک‌بار شروع شد" : "پایش متوقف شد", "ok");
+    toast(data.watching ? "پایش روشن شد؛ همه آگهی‌های جدید می‌آیند." : "پایش متوقف شد", "ok");
   } catch (err) {
     toast(err.message, "err");
   }
@@ -442,9 +444,8 @@ els.settings.addEventListener("submit", async (event) => {
       method: "PUT",
       body: {
         poll_interval_minutes: Number(els.settings.poll_interval_minutes.value),
-        max_send_per_run: Number(els.settings.max_send_per_run.value),
+        best_count: Number(els.settings.best_count.value),
         send_photos: els.settings.send_photos.checked,
-        send_on_first_run: els.settings.send_on_first_run.checked,
       },
     });
     renderStatus();

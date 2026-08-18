@@ -16,6 +16,7 @@ from config_store import (
 )
 from divar import DivarClient, Listing
 from notifier import TelegramNotifier
+from rank import pick_best
 from store import SeenStore
 
 _client: DivarClient | None = None
@@ -149,21 +150,51 @@ def preview_spec(body: dict[str, Any], limit: int = 24) -> dict[str, Any]:
     }
 
 
-def run_filters(filter_ids: list[str] | None = None, dry_run: bool = False) -> dict[str, Any]:
+def best_count(config: dict[str, Any] | None = None) -> int:
+    config = config or load_config()
+    if config.get("best_count") is not None:
+        return max(1, min(int(config["best_count"]), 10))
+    return max(1, min(int(config.get("max_send_per_run") or 5), 10))
+
+
+def send_best(count: int | None = None, filter_ids: list[str] | None = None) -> dict[str, Any]:
     config = load_config()
     specs = enabled_filters(config, filter_ids)
     if not specs:
         raise AppError("No enabled filters to run.")
     listings = collect_listings(specs)
+    chosen = pick_best(listings, count if count is not None else best_count(config))
+    notifier = build_notifier(config, dry_run=False)
+    assert notifier is not None
+    if not chosen:
+        notifier.send_text("آگهی مناسبی با فیلترهای فعال پیدا نشد.")
+        return {"sent": 0, "found": 0, "listings": [], "message": "No matching listings."}
+    notifier.send_text(f"{len(chosen)} آگهی برتر از {len(listings)} آگهی فعال:")
+    for index, item in enumerate(chosen, start=1):
+        notifier.send_listing(item, rank=index)
+    return {
+        "sent": len(chosen),
+        "found": len(listings),
+        "listings": [item.to_dict() for item in chosen],
+        "message": f"Sent top {len(chosen)} of {len(listings)} listings.",
+        "filters": [spec.get("name") for spec in specs],
+    }
+
+
+def watch_tick() -> dict[str, Any]:
+    config = load_config()
+    specs = enabled_filters(config)
+    if not specs:
+        raise AppError("No enabled filters to run.")
+    listings = collect_listings(specs)
     store = SeenStore(DATA_DIR / "seen.json")
-    notifier = build_notifier(config, dry_run=dry_run)
+    notifier = build_notifier(config, dry_run=False)
     result = deliver(
         listings,
         store,
         notifier,
-        max_send=int(config.get("max_send_per_run") or 25),
+        max_send=0,
         send_on_first_run=bool(config.get("send_on_first_run", True)),
     )
     result["filters"] = [spec.get("name") for spec in specs]
-    result["settings"] = public_settings(config)
     return result

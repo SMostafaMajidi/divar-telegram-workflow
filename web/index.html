@@ -17,9 +17,10 @@
     </div>
     <div class="top-actions">
       <span id="telegram-pill" class="pill">تلگرام</span>
+      <span id="bot-pill" class="pill">ربات</span>
       <span id="watch-pill" class="pill">پایش خاموش</span>
       <button id="watch-btn" class="ghost" type="button">شروع پایش</button>
-      <button id="run-btn" class="primary" type="button">ارسال به تلگرام</button>
+      <button id="run-btn" class="primary" type="button">ارسال ۵ تای برتر</button>
     </div>
   </header>
 
@@ -29,23 +30,19 @@
         <h2>فیلترها</h2>
         <button id="add-btn" class="primary small" type="button">افزودن فیلتر</button>
       </div>
-      <p class="hint">چند فیلتر جدا بساز؛ هر کدام شهر، قیمت و عبارت خودش را دارد.</p>
+      <p class="hint">پایش همه آگهی‌های جدید را می‌فرستد. «۵ تا بهترین» یا /best یک قابلیت جداست.</p>
       <div id="filter-list" class="filter-list"></div>
       <form id="settings-form" class="settings">
         <h3>تنظیمات ارسال</h3>
         <label>فاصله پایش (دقیقه)
           <input name="poll_interval_minutes" type="number" min="1" step="1">
         </label>
-        <label>حداکثر ارسال در هر دور
-          <input name="max_send_per_run" type="number" min="1" max="80">
+        <label>تعداد آگهی برتر
+          <input name="best_count" type="number" min="1" max="10">
         </label>
         <label class="check">
           <input name="send_photos" type="checkbox">
           ارسال عکس آگهی
-        </label>
-        <label class="check">
-          <input name="send_on_first_run" type="checkbox">
-          در اجرای اول آگهی‌های فعلی هم بروند
         </label>
         <button type="submit" class="ghost small">ذخیره تنظیمات</button>
       </form>

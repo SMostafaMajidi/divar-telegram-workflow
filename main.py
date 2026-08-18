@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import argparse
-import sys
-import time
 
-from config_store import AppError, detect_telegram_chat, load_config, load_dotenv, poll_interval_seconds
+from config_store import AppError, detect_telegram_chat, load_config, load_dotenv
 from notifier import TelegramNotifier
-from runner import build_notifier, run_filters
+from runner import build_notifier, send_best
 
 
 def main() -> None:
@@ -16,8 +14,8 @@ def main() -> None:
         "command",
         nargs="?",
         default="serve",
-        choices=["serve", "once", "watch", "test", "chat-id"],
-        help="serve web UI, once one scan, watch loop, test telegram, chat-id detect",
+        choices=["serve", "once", "watch", "bot", "test", "chat-id"],
+        help="serve web UI, once top ads, watch new ads, bot listen, test, chat-id",
     )
     parser.add_argument("--dry-run", action="store_true", help="print results without sending")
     parser.add_argument("--port", type=int, default=8765)
@@ -56,36 +54,38 @@ def main() -> None:
         return
 
     if args.command == "once":
-        _run_cli(args.dry_run)
+        try:
+            result = send_best()
+        except AppError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(result["message"])
         return
 
-    interval = poll_interval_seconds(config)
-    print(f"watching every {interval // 60} min")
-    while True:
-        try:
-            _run_cli(args.dry_run)
-        except KeyboardInterrupt:
-            print("\nStopped.")
-            sys.exit(0)
-        except AppError as exc:
-            print(f"Error: {exc}")
-        except Exception as exc:
-            print(f"Error: {exc}")
-        time.sleep(interval)
+    if args.command == "watch":
+        from config_store import poll_interval_seconds
+        from runner import watch_tick
+        import time
 
+        print(f"watching every {poll_interval_seconds(config) // 60} min")
+        while True:
+            try:
+                result = watch_tick()
+                print(result["message"])
+            except KeyboardInterrupt:
+                print("\nStopped.")
+                return
+            except AppError as exc:
+                print(f"Error: {exc}")
+            except Exception as exc:
+                print(f"Error: {exc}")
+            time.sleep(poll_interval_seconds(config))
+        return
 
-def _run_cli(dry_run: bool) -> None:
-    try:
-        result = run_filters(dry_run=dry_run)
-    except AppError as exc:
-        raise SystemExit(str(exc)) from exc
-    print(result["message"])
-    if dry_run:
-        for item in result.get("listings") or []:
-            print("-" * 40)
-            print(item.get("title"))
-            print(item.get("price"), item.get("location"))
-            print(item.get("url"))
+    if args.command == "bot":
+        from bot import run_bot
+
+        run_bot()
+        return
 
 
 if __name__ == "__main__":
