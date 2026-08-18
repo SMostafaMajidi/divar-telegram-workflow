@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from config_store import (
+    ROOT,
     AppError,
     delete_filter,
     detect_telegram_chat,
@@ -24,7 +25,7 @@ from config_store import (
 from runner import get_client, preview_spec, send_best, watch_tick
 from bot import TelegramBot
 
-WEB_DIR = Path(__file__).resolve().parent / "web"
+WEB_DIR = ROOT / "web"
 
 BOT = TelegramBot()
 

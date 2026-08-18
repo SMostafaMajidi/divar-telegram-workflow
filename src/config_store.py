@@ -7,8 +7,8 @@ from typing import Any
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent
-CONFIG_PATH = ROOT / "config.yaml"
+ROOT = Path(__file__).resolve().parent.parent
+CONFIG_PATH = ROOT / "config" / "config.yaml"
 DATA_DIR = ROOT / "data"
 ENV_PATH = ROOT / ".env"
 
@@ -69,8 +69,9 @@ def save_config(config: dict[str, Any], path: Path = CONFIG_PATH) -> None:
         sort_keys=False,
         default_flow_style=False,
     )
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "# Filters can also be edited in the web UI: python3 main.py serve\n" + dumped,
+        "# Filters can also be edited in the web UI at http://127.0.0.1:8765\n" + dumped,
         encoding="utf-8",
     )
 

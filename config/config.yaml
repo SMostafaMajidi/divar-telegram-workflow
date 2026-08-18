@@ -1,4 +1,4 @@
-# Filters can also be edited in the web UI: python3 main.py serve
+# Filters can also be edited in the web UI at http://127.0.0.1:8765
 telegram:
   parse_mode: HTML
   send_photos: true

@@ -1,0 +1,16 @@
+name: workflow
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "8765:8765"
+    env_file:
+      - ../.env
+    volumes:
+      - ../config:/app/config
+      - ../.env:/app/.env
+      - ../data:/app/data
+    restart: unless-stopped

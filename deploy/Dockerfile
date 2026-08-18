@@ -8,8 +8,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+ENV PYTHONPATH=/app/src
+
+COPY src ./src
+COPY web ./web
+COPY config ./config
 
 EXPOSE 8765
 
-CMD ["python3", "main.py", "serve", "--host", "0.0.0.0", "--port", "8765"]
+CMD ["python3", "-m", "main", "serve", "--host", "0.0.0.0", "--port", "8765"]

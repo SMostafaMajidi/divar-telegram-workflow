@@ -1,9 +1,1 @@
-.git
-.github
-.env
-data
-.venv
-__pycache__
-*.pyc
-.pytest_cache
-README.md
+deploy/.dockerignore
