@@ -62,12 +62,23 @@ def main() -> None:
         return
 
     if args.command == "watch":
-        from config_store import poll_interval_seconds
+        from config_store import format_slot_time, next_slot_at, poll_interval_seconds, seconds_until_next_slot
         from runner import watch_tick
         import time
 
-        print(f"watching every {poll_interval_seconds(config) // 60} min")
+        print(f"watching on the clock every {poll_interval_seconds(config) // 60} min from 00:00")
+        include_now = True
         while True:
+            interval = poll_interval_seconds()
+            wait = seconds_until_next_slot(interval, include_now=include_now)
+            include_now = False
+            if wait > 0:
+                print(f"next scan at {format_slot_time(next_slot_at(interval, include_now=False))}")
+                try:
+                    time.sleep(wait)
+                except KeyboardInterrupt:
+                    print("\nStopped.")
+                    return
             try:
                 result = watch_tick()
                 print(result["message"])
@@ -78,7 +89,6 @@ def main() -> None:
                 print(f"Error: {exc}")
             except Exception as exc:
                 print(f"Error: {exc}")
-            time.sleep(poll_interval_seconds(config))
         return
 
     if args.command == "bot":

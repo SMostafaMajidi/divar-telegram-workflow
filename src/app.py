@@ -14,10 +14,13 @@ from config_store import (
     delete_filter,
     detect_telegram_chat,
     filter_to_api,
+    format_slot_time,
     load_config,
     load_dotenv,
+    next_slot_at,
     poll_interval_seconds,
     public_settings,
+    seconds_until_next_slot,
     toggle_filter,
     update_settings,
     upsert_filter,
@@ -34,6 +37,7 @@ class Watcher:
     def __init__(self) -> None:
         self.running = False
         self.last_message = ""
+        self.next_run_at = ""
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -42,23 +46,34 @@ class Watcher:
             return
         self._stop.clear()
         self.running = True
+        self.next_run_at = format_slot_time(next_slot_at(include_now=True))
+        self.last_message = f"Next scan at {self.next_run_at}."
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
         self.running = False
+        self.next_run_at = ""
 
     def _loop(self) -> None:
+        include_now = True
         while not self._stop.is_set():
+            interval = poll_interval_seconds()
+            wait = seconds_until_next_slot(interval, include_now=include_now)
+            include_now = False
+            if wait > 0:
+                when = next_slot_at(interval, include_now=False)
+                self.next_run_at = format_slot_time(when)
+                self.last_message = f"Next scan at {self.next_run_at}."
+                if self._stop.wait(wait):
+                    break
             try:
                 result = watch_tick()
                 self.last_message = result.get("message") or "Done."
             except Exception as exc:
                 self.last_message = str(exc)
-            interval = poll_interval_seconds()
-            if self._stop.wait(interval):
-                break
+            self.next_run_at = format_slot_time(next_slot_at(include_now=False))
 
 
 WATCHER = Watcher()
@@ -84,6 +99,7 @@ class Handler(BaseHTTPRequestHandler):
                 status["watching"] = WATCHER.running
                 status["bot_running"] = BOT.running
                 status["last_message"] = WATCHER.last_message or BOT.last_message
+                status["next_watch_at"] = WATCHER.next_run_at or None
                 return self._json(status)
             if path == "/api/cities":
                 q = (query.get("q") or [""])[0]
@@ -122,6 +138,7 @@ class Handler(BaseHTTPRequestHandler):
                         "watching": WATCHER.running,
                         "bot_running": BOT.running,
                         "last_message": WATCHER.last_message,
+                        "next_watch_at": WATCHER.next_run_at or None,
                     }
                 )
             if path == "/api/telegram/detect-chat":

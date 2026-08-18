@@ -431,7 +431,14 @@ els.watchBtn.addEventListener("click", async () => {
     const data = await api("/api/watch", { method: "POST", body: { action } });
     state.status.watching = data.watching;
     renderStatus();
-    toast(data.watching ? "پایش روشن شد؛ همه آگهی‌های جدید می‌آیند." : "پایش متوقف شد", "ok");
+    toast(
+      data.watching
+        ? (data.next_watch_at
+          ? `پایش روشن شد؛ نوبت بعدی ساعت ${data.next_watch_at}`
+          : "پایش روشن شد؛ همه آگهی‌های جدید می‌آیند.")
+        : "پایش متوقف شد",
+      "ok",
+    );
   } catch (err) {
     toast(err.message, "err");
   }

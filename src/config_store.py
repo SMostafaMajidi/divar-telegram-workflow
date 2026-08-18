@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,8 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config" / "config.yaml"
 DATA_DIR = ROOT / "data"
 ENV_PATH = ROOT / ".env"
+# Iran is permanently UTC+3:30; slots are aligned to local midnight.
+APP_TZ = timezone(timedelta(hours=3, minutes=30))
 
 
 class AppError(Exception):
@@ -233,6 +236,40 @@ def poll_interval_seconds(config: dict[str, Any] | None = None) -> int:
     if config.get("poll_interval_seconds") is not None:
         return max(60, int(config["poll_interval_seconds"]))
     return 180
+
+
+def seconds_until_next_slot(
+    interval_seconds: int | None = None,
+    *,
+    now: datetime | None = None,
+    include_now: bool = False,
+) -> float:
+    interval = max(1, int(interval_seconds if interval_seconds is not None else poll_interval_seconds()))
+    current = now.astimezone(APP_TZ) if now else datetime.now(APP_TZ)
+    midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed = (current - midnight).total_seconds()
+    remainder = elapsed % interval
+    if include_now and remainder < 1:
+        return 0.0
+    if remainder < 1e-6:
+        return float(interval)
+    return float(interval - remainder)
+
+
+def next_slot_at(
+    interval_seconds: int | None = None,
+    *,
+    now: datetime | None = None,
+    include_now: bool = False,
+) -> datetime:
+    current = now.astimezone(APP_TZ) if now else datetime.now(APP_TZ)
+    wait = seconds_until_next_slot(interval_seconds, now=current, include_now=include_now)
+    return current + timedelta(seconds=wait)
+
+
+def format_slot_time(when: datetime | None = None) -> str:
+    when = when or next_slot_at(include_now=True)
+    return when.astimezone(APP_TZ).strftime("%H:%M")
 
 
 def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:

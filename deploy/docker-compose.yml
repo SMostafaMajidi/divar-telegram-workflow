@@ -13,4 +13,6 @@ services:
       - ../config:/app/config
       - ../.env:/app/.env
       - ../data:/app/data
+    environment:
+      TZ: Asia/Tehran
     restart: unless-stopped
