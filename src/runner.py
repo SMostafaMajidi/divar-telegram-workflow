@@ -12,6 +12,7 @@ from config_store import (
     get_filter,
     load_config,
     load_dotenv,
+    poll_interval_seconds,
     public_settings,
 )
 from divar import DivarClient, Listing
@@ -187,14 +188,23 @@ def watch_tick() -> dict[str, Any]:
     if not specs:
         raise AppError("No enabled filters to run.")
     listings = collect_listings(specs)
+    max_age = max(1, poll_interval_seconds(config) // 60)
+    newest = [
+        item
+        for item in listings
+        if item.age_minutes is not None and item.age_minutes <= max_age
+    ]
     store = SeenStore(DATA_DIR / "seen.json")
     notifier = build_notifier(config, dry_run=False)
     result = deliver(
-        listings,
+        newest,
         store,
         notifier,
         max_send=0,
-        send_on_first_run=bool(config.get("send_on_first_run", True)),
+        send_on_first_run=True,
     )
     result["filters"] = [spec.get("name") for spec in specs]
+    result["found_all"] = len(listings)
+    if result["sent"] == 0 and not result.get("new"):
+        result["message"] = f"No new listings in the last {max_age} min."
     return result

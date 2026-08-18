@@ -434,8 +434,8 @@ els.watchBtn.addEventListener("click", async () => {
     toast(
       data.watching
         ? (data.next_watch_at
-          ? `پایش روشن شد؛ نوبت بعدی ساعت ${data.next_watch_at}`
-          : "پایش روشن شد؛ همه آگهی‌های جدید می‌آیند.")
+          ? `پایش روشن شد؛ نوبت بعدی ساعت ${data.next_watch_at} — فقط تازه‌ترین‌ها`
+          : "پایش روشن شد؛ فقط آگهی‌های تازه می‌آیند.")
         : "پایش متوقف شد",
       "ok",
     );

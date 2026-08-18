@@ -50,6 +50,8 @@ class Listing:
     image_url: str | None
     url: str
     filter_name: str
+    age_text: str = ""
+    age_minutes: int | None = None
 
     @property
     def location(self) -> str:
@@ -68,6 +70,8 @@ class Listing:
             "image_url": self.image_url,
             "url": self.url,
             "filter_name": self.filter_name,
+            "age_text": self.age_text,
+            "age_minutes": self.age_minutes,
         }
 
 
@@ -262,6 +266,7 @@ def _parse_listings(data: dict[str, Any], filter_name: str) -> list[Listing]:
         web_info = (
             ((row.get("action") or {}).get("payload") or {}).get("web_info") or {}
         )
+        age_text = (row.get("bottom_description_text") or "").strip()
         listings.append(
             Listing(
                 token=token,
@@ -273,9 +278,50 @@ def _parse_listings(data: dict[str, Any], filter_name: str) -> list[Listing]:
                 image_url=_upgrade_image(row.get("image_url")),
                 url=POST_URL.format(token=token),
                 filter_name=filter_name,
+                age_text=age_text,
+                age_minutes=parse_age_minutes(age_text),
             )
         )
     return listings
+
+
+def parse_age_minutes(text: str) -> int | None:
+    if not text:
+        return None
+    raw = text.translate(_DIGIT_MAP).replace("\u200c", " ")
+    raw = raw.replace("ي", "ی").replace("ك", "ک")
+    head = raw.split(" در ", 1)[0].strip()
+    if not head:
+        return None
+    if any(word in head for word in ("لحظ", "همین الان")):
+        return 1
+    if "ربع" in head:
+        return 15
+    if "نیم ساعت" in head or "نیم‌ساعت" in head:
+        return 30
+    if "دقایق" in head or "چند دقیقه" in head:
+        return 5
+    if "ساعتی" in head:
+        return 60
+    match = re.search(r"(\d+)\s*دقیقه", head)
+    if match:
+        return int(match.group(1))
+    match = re.search(r"(\d+)\s*ساعت", head)
+    if match:
+        return int(match.group(1)) * 60
+    if "دیروز" in head:
+        return 24 * 60
+    match = re.search(r"(\d+)\s*روز", head)
+    if match:
+        return int(match.group(1)) * 24 * 60
+    if "هفته" in head:
+        match = re.search(r"(\d+)", head)
+        weeks = int(match.group(1)) if match else 1
+        return weeks * 7 * 24 * 60
+    return None
+
+
+_DIGIT_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
 
 def _upgrade_image(url: str | None) -> str | None:

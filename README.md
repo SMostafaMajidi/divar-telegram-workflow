@@ -1,6 +1,6 @@
 # دیوار → تلگرام
 
-Watch sends every new ad to Telegram. Send `/best` or «۵ تا بهترین» for a ranked shortlist from active filters.
+Watch sends only ads posted in the latest poll window. Send `/best` or «۵ تا بهترین» for a ranked shortlist from active filters.
 
 ```
 config/     filters and send settings
