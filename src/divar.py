@@ -161,7 +161,7 @@ class DivarClient:
             payload["search_data"]["query"] = query
 
         max_pages = int(spec.get("max_pages") or 1)
-        exclude = [_norm(w) for w in spec.get("exclude_title") or [] if str(w).strip()]
+        exclude = [str(w).strip() for w in spec.get("exclude_title") or [] if str(w).strip()]
         listings: list[Listing] = []
         seen_tokens: set[str] = set()
         pagination_data = None
@@ -251,6 +251,10 @@ def _form_data(spec: dict[str, Any]) -> dict[str, Any]:
         price["maximum"] = str(int(spec["price_max_toman"]))
     if price:
         data["price"] = {"number_range": price}
+    category = spec.get("category") or "light"
+    chassis = spec.get("chassis_status", "both-healthy")
+    if category == "light" and chassis:
+        data["chassis_status"] = {"str": {"value": str(chassis)}}
     return data
 
 
@@ -350,17 +354,19 @@ def _is_negated(title: str, phrase: str) -> bool:
 
 
 _DAMAGE_PATTERNS = (
-    r"شاسی[\s‌]*خورد",
+    r"شاسی[\s‌]*(?:ها[\s‌]*)?خورد",
     r"خوردگی[\s‌]*شاسی",
-    r"شاسی[\s‌]*رنگ",
+    r"شاسی[\s‌]*(?:ها[\s‌]*)?رنگ",
     r"رنگ[\s‌]*شاسی",
-    r"شاسی[\s‌]*ضربه",
+    r"شاسی[\s‌]*(?:ها[\s‌]*)?ضربه",
     r"ضربه[\s‌]*شاسی",
     r"جوش[\s‌]*شاسی",
-    r"شاسی[\s‌]*جوش",
+    r"شاسی[\s‌]*(?:ها[\s‌]*)?جوش",
     r"ستون[\s‌]*خورد",
     r"پوسیدگ",
     r"زنگ[\s‌]*زد",
+    r"کف[\s‌]*پوسید",
+    r"شاسی[\s‌]*(?:ها[\s‌]*)?آسیب",
 )
 
 
