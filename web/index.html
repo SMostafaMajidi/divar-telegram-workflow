@@ -17,6 +17,7 @@
     </div>
     <div class="top-actions">
       <span id="telegram-pill" class="pill">تلگرام</span>
+      <span id="llm-pill" class="pill">مدل</span>
       <span id="bot-pill" class="pill">ربات</span>
       <span id="watch-pill" class="pill">پایش خاموش</span>
       <button id="watch-btn" class="ghost" type="button">شروع پایش</button>
@@ -30,7 +31,7 @@
         <h2>فیلترها</h2>
         <button id="add-btn" class="primary small" type="button">افزودن فیلتر</button>
       </div>
-      <p class="hint">پایش فقط آگهی‌های تازهٔ همین فاصله زمانی را می‌فرستد. «۵ تا بهترین» یا /best جداست.</p>
+      <p class="hint">پایش فقط آگهی‌های تازه را می‌فرستد. «۵ تا بهترین» اول فیلتر دیوار است، بعد مدل زبانی انتخاب می‌کند.</p>
       <div id="filter-list" class="filter-list"></div>
       <form id="settings-form" class="settings">
         <h3>تنظیمات ارسال</h3>
@@ -94,7 +95,7 @@
       <div class="field">
         <span>کلمات حذف از عنوان</span>
         <div id="exclude-chips" class="chips"></div>
-        <input id="exclude-input" placeholder="مثلاً تصادفی و Enter">
+        <input id="exclude-input" placeholder="مثلاً شاسی خورده و Enter">
       </div>
       <div class="row">
         <label>تعداد صفحات دیوار

@@ -13,11 +13,10 @@ from config_store import (
     load_config,
     load_dotenv,
     poll_interval_seconds,
-    public_settings,
 )
+from ai_rank import pick_best_ai
 from divar import DivarClient, Listing
 from notifier import TelegramNotifier
-from rank import pick_best
 from store import SeenStore
 
 _client: DivarClient | None = None
@@ -164,20 +163,23 @@ def send_best(count: int | None = None, filter_ids: list[str] | None = None) -> 
     if not specs:
         raise AppError("No enabled filters to run.")
     listings = collect_listings(specs)
-    chosen = pick_best(listings, count if count is not None else best_count(config))
+    wanted = count if count is not None else best_count(config)
+    chosen, source = pick_best_ai(listings, wanted)
     notifier = build_notifier(config, dry_run=False)
     assert notifier is not None
     if not chosen:
         notifier.send_text("آگهی مناسبی با فیلترهای فعال پیدا نشد.")
         return {"sent": 0, "found": 0, "listings": [], "message": "No matching listings."}
-    notifier.send_text(f"{len(chosen)} آگهی برتر از {len(listings)} آگهی فعال:")
-    for index, item in enumerate(chosen, start=1):
-        notifier.send_listing(item, rank=index)
+    label = "با مدل زبانی" if source == "ai" else "با رتبه‌بندی ساده"
+    notifier.send_text(f"{len(chosen)} آگهی برتر از {len(listings)} آگهی فعال ({label}):")
+    for index, (item, reason) in enumerate(chosen, start=1):
+        notifier.send_listing(item, rank=index, reason=reason)
     return {
         "sent": len(chosen),
         "found": len(listings),
-        "listings": [item.to_dict() for item in chosen],
-        "message": f"Sent top {len(chosen)} of {len(listings)} listings.",
+        "source": source,
+        "listings": [item.to_dict() for item, _reason in chosen],
+        "message": f"Sent top {len(chosen)} of {len(listings)} listings ({source}).",
         "filters": [spec.get("name") for spec in specs],
     }
 

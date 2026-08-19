@@ -290,6 +290,8 @@ def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "telegram_chat": bool(chat_id),
         "telegram_ready": bool(token and chat_id),
         "bot_username": telegram_bot_username(token) if token else None,
+        "llm_ready": bool((os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()),
+        "llm_model": (os.getenv("LLM_MODEL") or "gpt-4o-mini").strip(),
         "filter_count": len(filters),
         "enabled_count": sum(1 for f in filters if f.get("enabled", True)),
     }

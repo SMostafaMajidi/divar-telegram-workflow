@@ -1,5 +1,19 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 
+const DEFAULT_EXCLUDE = [
+  "تصادفی",
+  "چپی",
+  "اسقاط",
+  "موتور سوخته",
+  "یاتاقان",
+  "شاسی خورده",
+  "خوردگی شاسی",
+  "شاسی رنگ",
+  "رنگ شاسی",
+  "پوسیدگی",
+  "زنگ زدگی",
+];
+
 const state = {
   filters: [],
   status: {},
@@ -23,6 +37,7 @@ const els = {
   excludeInput: $("#exclude-input"),
   excludeChips: $("#exclude-chips"),
   telegramPill: $("#telegram-pill"),
+  llmPill: $("#llm-pill"),
   botPill: $("#bot-pill"),
   watchPill: $("#watch-pill"),
   watchBtn: $("#watch-btn"),
@@ -153,6 +168,10 @@ function renderStatus() {
       ? "Chat ID ندارد"
       : "تلگرام تنظیم نشده";
   els.telegramPill.className = `pill ${ready ? "ok" : "warn"}`;
+  els.llmPill.textContent = state.status.llm_ready
+    ? `مدل ${state.status.llm_model || ""}`.trim()
+    : "مدل تنظیم نشده";
+  els.llmPill.className = `pill ${state.status.llm_ready ? "ok" : "warn"}`;
   els.botPill.textContent = state.status.bot_running ? "ربات روشن" : "ربات خاموش";
   els.botPill.className = `pill ${state.status.bot_running ? "ok" : ""}`;
   els.watchPill.textContent = state.status.watching ? "پایش روشن" : "پایش خاموش";
@@ -247,7 +266,7 @@ function openEditor(filter = null) {
   els.form.max_pages.value = filter?.max_pages || 3;
   els.form.enabled.checked = filter ? !!filter.enabled : true;
   state.cities = [...(filter?.cities || [])];
-  state.exclude = [...(filter?.exclude_title || [])];
+  state.exclude = [...(filter?.exclude_title || DEFAULT_EXCLUDE)];
   $("#editor-title").textContent = filter ? "ویرایش فیلتر" : "فیلتر جدید";
   refreshChips();
   loadPopularCities();

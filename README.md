@@ -1,6 +1,6 @@
 # دیوار → تلگرام
 
-Watch sends only ads posted in the latest poll window. Send `/best` or «۵ تا بهترین» for a ranked shortlist from active filters.
+Watch sends only ads posted in the latest poll window. `/best` first applies your Divar filters, then an LLM ranks the remaining ads if `LLM_API_KEY` is set.
 
 ```
 config/     filters and send settings
@@ -8,7 +8,7 @@ data/       seen ads and city cache
 src/        Python app
 web/        UI
 deploy/     Docker
-.env        Telegram token and chat id
+.env        Telegram and optional LLM keys
 ```
 
 ## Run

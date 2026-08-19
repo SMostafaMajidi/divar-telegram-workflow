@@ -332,7 +332,47 @@ def _upgrade_image(url: str | None) -> str | None:
 
 def _should_exclude(title: str, words: list[str]) -> bool:
     normalized = _norm(title)
-    return any(word and word in normalized for word in words)
+    for word in words:
+        compact = _norm(word)
+        if compact and compact in normalized and not _is_negated(title, word):
+            return True
+    return _has_body_damage(title)
+
+
+def _is_negated(title: str, phrase: str) -> bool:
+    text = title.replace("\u200c", " ")
+    phrase = phrase.replace("\u200c", " ")
+    match = re.search(re.escape(phrase), text, re.I)
+    if not match:
+        return False
+    prefix = text[max(0, match.start() - 10) : match.start()]
+    return any(token in prefix for token in ("بدون", "فاقد", "عدم"))
+
+
+_DAMAGE_PATTERNS = (
+    r"شاسی[\s‌]*خورد",
+    r"خوردگی[\s‌]*شاسی",
+    r"شاسی[\s‌]*رنگ",
+    r"رنگ[\s‌]*شاسی",
+    r"شاسی[\s‌]*ضربه",
+    r"ضربه[\s‌]*شاسی",
+    r"جوش[\s‌]*شاسی",
+    r"شاسی[\s‌]*جوش",
+    r"ستون[\s‌]*خورد",
+    r"پوسیدگ",
+    r"زنگ[\s‌]*زد",
+)
+
+
+def _has_body_damage(title: str) -> bool:
+    text = title.replace("\u200c", " ")
+    for pattern in _DAMAGE_PATTERNS:
+        for match in re.finditer(pattern, text, re.I):
+            prefix = text[max(0, match.start() - 10) : match.start()]
+            if any(token in prefix for token in ("بدون", "فاقد", "عدم")):
+                continue
+            return True
+    return False
 
 
 def _norm(value: str) -> str:

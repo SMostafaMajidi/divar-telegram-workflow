@@ -70,8 +70,8 @@ class TelegramNotifier:
         self.timeout = timeout
         self.session = requests.Session()
 
-    def send_listing(self, listing: Listing, rank: int | None = None) -> None:
-        caption = format_listing(listing, rank=rank)
+    def send_listing(self, listing: Listing, rank: int | None = None, reason: str | None = None) -> None:
+        caption = format_listing(listing, rank=rank, reason=reason)
         if self.send_photos and listing.image_url:
             try:
                 self._call(
@@ -139,7 +139,7 @@ class TelegramNotifier:
         return data
 
 
-def format_listing(listing: Listing, rank: int | None = None) -> str:
+def format_listing(listing: Listing, rank: int | None = None, reason: str | None = None) -> str:
     title = html.escape(listing.title)
     if rank is not None:
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -154,5 +154,7 @@ def format_listing(listing: Listing, rank: int | None = None) -> str:
         lines.append(f"🛣️ {html.escape(listing.mileage)}")
     if listing.location:
         lines.append(f"📍 {html.escape(listing.location)}")
+    if reason:
+        lines.append(f"🧠 {html.escape(reason)}")
     lines.append(f'🔗 <a href="{html.escape(listing.url, quote=True)}">مشاهده در دیوار</a>')
     return "\n".join(lines)

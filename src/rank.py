@@ -21,7 +21,7 @@ def parse_int(text: str | None) -> int | None:
         return None
 
 
-def _year(title: str) -> int:
+def listing_year(title: str) -> int:
     text = title.translate(_DIGIT_MAP)
     match = re.search(r"13[7-9]\d|14[0-1]\d", text)
     if match:
@@ -49,7 +49,7 @@ def pick_best(listings: list[Listing], count: int = 5) -> list[Listing]:
         listings,
         key=lambda item: (
             0 if item.image_url else 1,
-            -_year(item.title),
+            -listing_year(item.title),
             _km(item),
             parse_int(item.price) or 10**12,
         ),
