@@ -38,3 +38,30 @@ filters:
       - زنگ زده
     max_pages: 3
     id: 210837ed5c
+    chat_id: '-1003427369328'
+  - id: 2d90af92cc
+    name: تیبا اصفهان
+    enabled: true
+    category: light
+    query: تیبا
+    cities:
+      - اصفهان
+      - خمینی‌شهر
+      - نجف‌آباد
+      - فلاورجان
+    price_min_toman: 300000000
+    price_max_toman: 450000000
+    exclude_title:
+      - تصادفی
+      - چپی
+      - اسقاط
+      - موتور سوخته
+      - یاتاقان
+      - شاسی خورده
+      - خوردگی شاسی
+      - شاسی رنگ
+      - رنگ شاسی
+      - پوسیدگی
+      - زنگ زدگی
+    max_pages: 3
+    chat_id: '-1003427369328'

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import os
 import re
 import threading
 import time
 
-from config_store import AppError, load_config, load_dotenv
-from notifier import TelegramNotifier
+from config_store import DATA_DIR, AppError, load_config, load_dotenv
+from notifier import TelegramNotifier, chat_from_update
 from runner import best_count, build_notifier, send_best
+from store import ChatStore
 
 HELP = (
     "وقتی خواستی بهترین‌ها را ببین، یکی از این‌ها را بزن:\n"
@@ -47,7 +47,7 @@ class TelegramBot:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
-                notifier = build_notifier(load_config(), dry_run=False)
+                notifier = build_notifier(load_config(), dry_run=False, require_chat=False)
                 assert notifier is not None
                 self._poll(notifier)
             except AppError as exc:
@@ -60,11 +60,14 @@ class TelegramBot:
                     break
 
     def _poll(self, notifier: TelegramNotifier) -> None:
-        allowed = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+        chats = ChatStore(DATA_DIR / "chats.json")
         try:
             backlog = notifier.get_updates(offset=self._offset, timeout=0)
-            if backlog:
-                self._offset = int(backlog[-1].get("update_id") or 0) + 1
+            for update in backlog:
+                self._offset = int(update.get("update_id") or 0) + 1
+                record = chat_from_update(update)
+                if record:
+                    chats.upsert(record)
         except Exception:
             pass
         while not self._stop.is_set():
@@ -76,40 +79,50 @@ class TelegramBot:
                 continue
             for update in updates:
                 self._offset = int(update.get("update_id") or 0) + 1
-                message = update.get("message") or {}
-                chat = (message.get("chat") or {}).get("id")
-                if allowed and str(chat) != allowed:
-                    continue
+                record = chat_from_update(update)
+                if record:
+                    chats.upsert(record)
+                message = (
+                    update.get("message")
+                    or update.get("edited_message")
+                    or update.get("channel_post")
+                    or {}
+                )
+                chat_id = str((message.get("chat") or {}).get("id") or "")
                 text = str(message.get("text") or "").strip()
-                if not text:
+                if not chat_id or not text:
                     continue
-                self._handle(notifier, text)
+                self._handle(notifier, text, chat_id)
 
-    def _handle(self, notifier: TelegramNotifier, text: str) -> None:
+    def _handle(self, notifier: TelegramNotifier, text: str, chat_id: str) -> None:
         command = text.strip()
-        lowered = command.lower()
+        lowered = command.lower().split("@", 1)[0]
         if lowered in {"/start", "/help", "help", "راهنما"}:
-            notifier.send_text(HELP, reply_markup=KEYBOARD)
-            self.last_message = "Sent help."
+            notifier.send_text(HELP, reply_markup=KEYBOARD, chat_id=chat_id)
+            self.last_message = f"Registered chat {chat_id}."
             return
         count = _requested_count(command)
         if count is None:
-            notifier.send_text("برای گرفتن آگهی‌های برتر «۵ تا بهترین» یا /best را بزن.", reply_markup=KEYBOARD)
+            notifier.send_text(
+                "برای گرفتن آگهی‌های برتر «۵ تا بهترین» یا /best را بزن.",
+                reply_markup=KEYBOARD,
+                chat_id=chat_id,
+            )
             return
-        notifier.send_text("دارم بین آگهی‌های فعال می‌گردم…")
+        notifier.send_text("دارم بین آگهی‌های فعال می‌گردم…", chat_id=chat_id)
         try:
             result = send_best(count)
             self.last_message = result["message"]
         except Exception as exc:
             self.last_message = str(exc)
-            notifier.send_text("جستجو به مشکل خورد. کمی بعد دوباره بزن.")
+            notifier.send_text("جستجو به مشکل خورد. کمی بعد دوباره بزن.", chat_id=chat_id)
 
 
 def _requested_count(text: str) -> int | None:
     raw = text.strip().lower().replace("\u200c", "").translate(
         str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
     )
-    raw = raw.replace("/", " ").strip()
+    raw = raw.replace("/", " ").split("@", 1)[0].strip()
     if raw in {"best", "top", "بهترین", "5 تا بهترین", "پنج تا بهترین"}:
         return best_count()
     match = re.fullmatch(r"(?:best|top|بهترین)\s+(\d{1,2})", raw)

@@ -17,6 +17,7 @@ const DEFAULT_EXCLUDE = [
 const state = {
   filters: [],
   status: {},
+  chats: [],
   cities: [],
   exclude: [],
   editing: null,
@@ -47,6 +48,8 @@ const els = {
   telegramSetup: $("#telegram-setup"),
   telegramHint: $("#telegram-setup-hint"),
   detectChatBtn: $("#detect-chat-btn"),
+  refreshChatsBtn: $("#refresh-chats-btn"),
+  chatList: $("#chat-list"),
 };
 
 function el(tag, attrs = {}, children = []) {
@@ -93,6 +96,29 @@ function priceText(filter) {
   return `تا ${max} میلیون`;
 }
 
+function chatLabel(chat) {
+  const kinds = {
+    private: "خصوصی",
+    group: "گروه",
+    supergroup: "گروه",
+    channel: "کانال",
+  };
+  const kind = kinds[chat.type] || "";
+  const name = chat.name || (chat.username ? `@${chat.username}` : chat.id);
+  return kind ? `${name} · ${kind}` : String(name);
+}
+
+function fillChatSelect(select, selected) {
+  select.replaceChildren(el("option", { value: "", text: "چت پیش‌فرض" }));
+  for (const chat of state.chats) {
+    select.append(el("option", { value: chat.id, text: chatLabel(chat) }));
+  }
+  if (selected && !state.chats.some((item) => String(item.id) === String(selected))) {
+    select.append(el("option", { value: selected, text: selected }));
+  }
+  select.value = selected || "";
+}
+
 function renderFilters() {
   els.list.replaceChildren();
   if (!state.filters.length) {
@@ -126,6 +152,26 @@ function renderFilters() {
         class: "meta",
         text: `${filter.query} · ${filter.cities.join("، ")} · ${priceText(filter)}`,
       }),
+      el("label", { class: "chat-target" }, [
+        "ارسال به چت",
+        (() => {
+          const select = el("select");
+          fillChatSelect(select, filter.chat_id);
+          select.addEventListener("change", async () => {
+            try {
+              const data = await api(`/api/filters/${filter.id}/chat`, {
+                method: "POST",
+                body: { chat_id: select.value },
+              });
+              replaceFilter(data.filter);
+              toast("مقصد این فیلتر ذخیره شد", "ok");
+            } catch (err) {
+              toast(err.message, "err");
+            }
+          });
+          return select;
+        })(),
+      ]),
       el("div", { class: "card-actions" }, [
         el("button", {
           class: "ghost small",
@@ -165,7 +211,7 @@ function renderStatus() {
   els.telegramPill.textContent = ready
     ? "تلگرام وصل است"
     : hasToken
-      ? "Chat ID ندارد"
+      ? "مقصد چت ندارد"
       : "تلگرام تنظیم نشده";
   els.telegramPill.className = `pill ${ready ? "ok" : "warn"}`;
   els.llmPill.textContent = state.status.llm_ready
@@ -182,17 +228,35 @@ function renderStatus() {
   els.settings.send_photos.checked = !!state.status.send_photos;
 
   const needsChat = hasToken && !state.status.telegram_chat;
-  els.telegramSetup.hidden = !needsChat;
-  if (needsChat) {
+  els.telegramSetup.hidden = !hasToken;
+  if (hasToken) {
     const botLabel = bot ? `@${bot}` : "ربات";
     els.telegramHint.replaceChildren(
-      "در تلگرام ",
       bot
         ? el("a", { href: `https://t.me/${bot}`, target: "_blank", text: botLabel })
         : botLabel,
-      " را باز کن، ",
+      " را به گروه یا چت مورد نظر اضافه کن، ",
       el("b", { text: "/start" }),
-      " بزن، بعد دکمه خواندن Chat ID را بزن."
+      " بزن، بعد لیست چت‌ها را تازه کن و برای هر فیلتر مقصد را انتخاب کن.",
+      needsChat ? " هنوز مقصد پیش‌فرض ذخیره نشده." : ""
+    );
+  }
+  renderChatList();
+}
+
+function renderChatList() {
+  if (!els.chatList) return;
+  els.chatList.replaceChildren();
+  if (!state.chats.length) {
+    els.chatList.append(el("li", { text: "هنوز چتی ثبت نشده. /start بزن و تازه کن." }));
+    return;
+  }
+  for (const chat of state.chats) {
+    const isDefault = String(chat.id) === String(state.status.default_chat_id || "");
+    els.chatList.append(
+      el("li", {
+        text: `${chatLabel(chat)}${isDefault ? " (پیش‌فرض)" : ""}`,
+      })
     );
   }
 }
@@ -252,6 +316,7 @@ function formPayload() {
     exclude_title: state.exclude,
     max_pages: data.get("max_pages") || 3,
     enabled: els.form.enabled.checked,
+    chat_id: data.get("chat_id") || "",
   };
 }
 
@@ -265,6 +330,7 @@ function openEditor(filter = null) {
   els.form.price_max_million.value = filter?.price_max_million ?? "";
   els.form.max_pages.value = filter?.max_pages || 3;
   els.form.enabled.checked = filter ? !!filter.enabled : true;
+  fillChatSelect(els.form.chat_id, filter?.chat_id || "");
   state.cities = [...(filter?.cities || [])];
   state.exclude = [...(filter?.exclude_title || DEFAULT_EXCLUDE)];
   $("#editor-title").textContent = filter ? "ویرایش فیلتر" : "فیلتر جدید";
@@ -424,17 +490,34 @@ els.runBtn.addEventListener("click", async () => {
   }
 });
 
+els.refreshChatsBtn.addEventListener("click", async () => {
+  els.refreshChatsBtn.disabled = true;
+  toast("در حال خواندن چت‌های ذخیره‌شده…");
+  try {
+    await loadChats();
+    renderFilters();
+    renderStatus();
+    toast(state.chats.length ? `${state.chats.length} چت پیدا شد` : "چتی نیست؛ /start بزن", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    els.refreshChatsBtn.disabled = false;
+  }
+});
+
 els.detectChatBtn.addEventListener("click", async () => {
   els.detectChatBtn.disabled = true;
   toast("در حال خواندن Chat ID از تلگرام…");
   try {
     const data = await api("/api/telegram/detect-chat", { method: "POST", body: {} });
+    if (data.chats) state.chats = data.chats;
     if (data.status) state.status = { ...state.status, ...data.status };
+    renderFilters();
     renderStatus();
     toast(
       data.saved
-        ? `Chat ID ذخیره شد: ${data.chat_id}`
-        : "چند چت پیدا شد؛ یکی را انتخاب کن.",
+        ? `چت پیش‌فرض ذخیره شد: ${data.chat_id}`
+        : "چند چت هست؛ برای هر فیلتر مقصد را جدا انتخاب کن.",
       "ok"
     );
   } catch (err) {
@@ -481,11 +564,21 @@ els.settings.addEventListener("submit", async (event) => {
   }
 });
 
+async function loadChats() {
+  const data = await api("/api/telegram/chats");
+  state.chats = data.chats || [];
+}
+
 async function boot() {
   try {
     const [filters, status] = await Promise.all([api("/api/filters"), api("/api/status")]);
     state.filters = filters.filters || [];
     state.status = status;
+    try {
+      await loadChats();
+    } catch (_err) {
+      state.chats = [];
+    }
     renderFilters();
     renderStatus();
     renderResults([], "نتایج");

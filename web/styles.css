@@ -271,6 +271,38 @@ dialog::backdrop { background: rgba(28, 25, 22, 0.35); }
 }
 .telegram-setup[hidden] { display: none; }
 .telegram-setup a { color: var(--accent); }
+.chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.chat-list li {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.chat-target {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  font-size: 14px;
+  font-family: inherit;
+}
+.toast {
   padding: 10px 12px;
   border-radius: 12px;
   background: #fff3d6;

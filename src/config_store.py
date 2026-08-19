@@ -105,6 +105,7 @@ def filter_to_api(spec: dict[str, Any]) -> dict[str, Any]:
         "price_max_million": _to_million(spec.get("price_max_toman")),
         "exclude_title": list(spec.get("exclude_title") or []),
         "max_pages": int(spec.get("max_pages") or 3),
+        "chat_id": str(spec.get("chat_id") or "").strip(),
     }
 
 
@@ -131,6 +132,7 @@ def filter_from_api(body: dict[str, Any], existing: dict[str, Any] | None = None
             "price_max_toman": _from_million(body.get("price_max_million")),
             "exclude_title": _clean_list(body.get("exclude_title")),
             "max_pages": max(1, min(int(body.get("max_pages") or 3), 8)),
+            "chat_id": str(body.get("chat_id") if "chat_id" in body else spec.get("chat_id") or "").strip(),
         }
     )
     return spec
@@ -168,7 +170,17 @@ def toggle_filter(filter_id: str, enabled: bool | None = None) -> dict[str, Any]
             spec["enabled"] = (not spec.get("enabled", True)) if enabled is None else bool(enabled)
             save_config(config)
             return filter_to_api(spec)
-        raise AppError("Filter not found.")
+    raise AppError("Filter not found.")
+
+
+def set_filter_chat(filter_id: str, chat_id: str | None) -> dict[str, Any]:
+    config = load_config()
+    for spec in config.get("filters") or []:
+        if spec.get("id") == filter_id:
+            spec["chat_id"] = str(chat_id or "").strip()
+            save_config(config)
+            return filter_to_api(spec)
+    raise AppError("Filter not found.")
 
 
 def detect_telegram_chat(chat_id: str | int | None = None) -> dict[str, Any]:
@@ -176,13 +188,9 @@ def detect_telegram_chat(chat_id: str | int | None = None) -> dict[str, Any]:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         raise AppError("Bot token is missing from .env.")
-    from notifier import list_recent_chats, telegram_bot_username
+    from notifier import telegram_bot_username
 
-    try:
-        chats = list_recent_chats(token)
-    except Exception as exc:
-        raise AppError("Telegram was unreachable. Try again in a moment.") from exc
-
+    chats = list_saved_chats()
     if chat_id not in (None, ""):
         chosen = str(chat_id)
         upsert_env_value("TELEGRAM_CHAT_ID", chosen)
@@ -191,13 +199,31 @@ def detect_telegram_chat(chat_id: str | int | None = None) -> dict[str, Any]:
     if not chats:
         username = telegram_bot_username(token) or "the bot"
         raise AppError(
-            f"No message yet. Open @{username} in Telegram, send /start, then try again."
+            f"No chat yet. Open @{username} in Telegram, send /start, then refresh the chat list."
         )
     if len(chats) == 1:
         chosen = str(chats[0]["id"])
         upsert_env_value("TELEGRAM_CHAT_ID", chosen)
         return {"chat_id": chosen, "chats": chats, "saved": True}
     return {"chat_id": None, "chats": chats, "saved": False}
+
+
+def list_saved_chats() -> list[dict[str, Any]]:
+    load_dotenv()
+    from store import ChatStore
+
+    chats = {item["id"]: item for item in ChatStore(DATA_DIR / "chats.json").all()}
+    default_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if default_id and default_id not in chats:
+        chats[default_id] = {
+            "id": default_id,
+            "type": "private",
+            "name": "چت پیش‌فرض",
+            "username": "",
+        }
+    elif default_id and chats[default_id] and not chats[default_id].get("name"):
+        chats[default_id]["name"] = "چت پیش‌فرض"
+    return sorted(chats.values(), key=lambda item: (item.get("name") or item["id"]))
 
 
 def get_filter(filter_id: str) -> dict[str, Any]:
@@ -287,8 +313,9 @@ def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "send_on_first_run": bool(config.get("send_on_first_run", True)),
         "send_photos": bool((config.get("telegram") or {}).get("send_photos", True)),
         "telegram_token": bool(token),
-        "telegram_chat": bool(chat_id),
-        "telegram_ready": bool(token and chat_id),
+        "telegram_chat": bool(chat_id) or any(str(f.get("chat_id") or "").strip() for f in filters),
+        "telegram_ready": bool(token and (chat_id or any(str(f.get("chat_id") or "").strip() for f in filters))),
+        "default_chat_id": chat_id,
         "bot_username": telegram_bot_username(token) if token else None,
         "llm_ready": bool((os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()),
         "llm_model": (os.getenv("LLM_MODEL") or "gpt-4o-mini").strip(),

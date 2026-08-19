@@ -14,6 +14,8 @@ from config_store import (
     delete_filter,
     detect_telegram_chat,
     filter_to_api,
+    list_saved_chats,
+    set_filter_chat,
     format_slot_time,
     load_config,
     load_dotenv,
@@ -105,6 +107,8 @@ class Handler(BaseHTTPRequestHandler):
                 q = (query.get("q") or [""])[0]
                 cities = get_client().search_cities(q)
                 return self._json({"cities": cities})
+            if path == "/api/telegram/chats":
+                return self._json({"chats": list_saved_chats()})
             return self._json({"error": "Not found."}, 404)
         except Exception as exc:
             self._handle_error(exc)
@@ -119,6 +123,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.endswith("/toggle") and path.startswith("/api/filters/"):
                 filter_id = path.split("/")[3]
                 return self._json({"filter": toggle_filter(filter_id, body.get("enabled"))})
+            if path.endswith("/chat") and path.startswith("/api/filters/"):
+                filter_id = path.split("/")[3]
+                return self._json({"filter": set_filter_chat(filter_id, body.get("chat_id"))})
             if path == "/api/preview":
                 return self._json(preview_spec(body))
             if path == "/api/run":
@@ -233,7 +240,7 @@ class ReuseServer(ThreadingHTTPServer):
 def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
     load_dotenv()
     load_config()
-    if public_settings()["telegram_ready"]:
+    if public_settings()["telegram_token"]:
         BOT.start()
         print("Telegram bot listening for /best", flush=True)
     server = ReuseServer((host, port), Handler)

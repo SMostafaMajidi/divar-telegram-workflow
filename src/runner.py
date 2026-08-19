@@ -40,20 +40,37 @@ def enabled_filters(config: dict[str, Any], filter_ids: list[str] | None = None)
     return [spec for spec in specs if spec.get("enabled", True)]
 
 
-def build_notifier(config: dict[str, Any], dry_run: bool) -> TelegramNotifier | None:
+def destination_chat_id(spec: dict[str, Any] | None = None, fallback: str = "") -> str:
+    load_dotenv()
+    if spec and str(spec.get("chat_id") or "").strip():
+        return str(spec["chat_id"]).strip()
+    return os.getenv("TELEGRAM_CHAT_ID", "").strip() or str(fallback or "").strip()
+
+
+def build_notifier(
+    config: dict[str, Any],
+    dry_run: bool,
+    *,
+    require_chat: bool = True,
+) -> TelegramNotifier | None:
     if dry_run:
         return None
     load_dotenv()
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
-    if not token or not chat_id:
+    chat_id = destination_chat_id()
+    if not chat_id:
+        for spec in config.get("filters") or []:
+            chat_id = destination_chat_id(spec)
+            if chat_id:
+                break
+    if not token or (require_chat and not chat_id):
         raise AppError(
-            "Telegram is not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env."
+            "Telegram is not configured. Set TELEGRAM_BOT_TOKEN and a chat for each filter."
         )
     telegram = config.get("telegram") or {}
     return TelegramNotifier(
         bot_token=token,
-        chat_id=chat_id,
+        chat_id=chat_id or "0",
         send_photos=bool(telegram.get("send_photos", True)),
         delay_seconds=float(telegram.get("delay_seconds", 0.8)),
     )
@@ -170,10 +187,25 @@ def send_best(count: int | None = None, filter_ids: list[str] | None = None) -> 
     if not chosen:
         notifier.send_text("آگهی مناسبی با فیلترهای فعال پیدا نشد.")
         return {"sent": 0, "found": 0, "listings": [], "message": "No matching listings."}
+    by_id = {str(spec.get("id")): spec for spec in specs}
     label = "با مدل زبانی" if source == "ai" else "با رتبه‌بندی ساده"
-    notifier.send_text(f"{len(chosen)} آگهی برتر از {len(listings)} آگهی فعال ({label}):")
+    intro_chats: set[str] = set()
+    for item, _reason in chosen:
+        chat_id = destination_chat_id(by_id.get(item.filter_id))
+        if chat_id:
+            intro_chats.add(chat_id)
+    for chat_id in intro_chats:
+        notifier.send_text(
+            f"{len(chosen)} آگهی برتر از {len(listings)} آگهی فعال ({label}):",
+            chat_id=chat_id,
+        )
     for index, (item, reason) in enumerate(chosen, start=1):
-        notifier.send_listing(item, rank=index, reason=reason)
+        notifier.send_listing(
+            item,
+            rank=index,
+            reason=reason,
+            chat_id=destination_chat_id(by_id.get(item.filter_id)),
+        )
     return {
         "sent": len(chosen),
         "found": len(listings),
@@ -189,24 +221,39 @@ def watch_tick() -> dict[str, Any]:
     specs = enabled_filters(config)
     if not specs:
         raise AppError("No enabled filters to run.")
-    listings = collect_listings(specs)
     max_age = max(1, poll_interval_seconds(config) // 60)
-    newest = [
-        item
-        for item in listings
-        if item.age_minutes is not None and item.age_minutes <= max_age
-    ]
     store = SeenStore(DATA_DIR / "seen.json")
     notifier = build_notifier(config, dry_run=False)
-    result = deliver(
-        newest,
-        store,
-        notifier,
-        max_send=0,
-        send_on_first_run=True,
-    )
-    result["filters"] = [spec.get("name") for spec in specs]
-    result["found_all"] = len(listings)
-    if result["sent"] == 0 and not result.get("new"):
-        result["message"] = f"No new listings in the last {max_age} min."
+    sent = 0
+    found = 0
+    newest_count = 0
+    for spec in specs:
+        listings = collect_listings([spec])
+        found += len(listings)
+        newest = [
+            item
+            for item in listings
+            if item.age_minutes is not None and item.age_minutes <= max_age
+        ]
+        newest_count += len(newest)
+        chat_id = destination_chat_id(spec)
+        prefix = str(spec.get("id") or "") + ":"
+        fresh = [item for item in newest if store.is_new(prefix + item.token)]
+        if not chat_id:
+            continue
+        for item in fresh:
+            if notifier is not None:
+                notifier.send_listing(item, chat_id=chat_id)
+        if notifier is not None:
+            store.add_many([prefix + item.token for item in fresh])
+        sent += len(fresh)
+    result = {
+        "sent": sent,
+        "found": found,
+        "new": newest_count,
+        "message": f"Sent {sent} listings." if sent else f"No new listings in the last {max_age} min.",
+        "filters": [spec.get("name") for spec in specs],
+        "found_all": found,
+        "listings": [],
+    }
     return result

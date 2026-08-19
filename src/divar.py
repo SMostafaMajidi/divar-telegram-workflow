@@ -52,6 +52,7 @@ class Listing:
     filter_name: str
     age_text: str = ""
     age_minutes: int | None = None
+    filter_id: str = ""
 
     @property
     def location(self) -> str:
@@ -70,6 +71,7 @@ class Listing:
             "image_url": self.image_url,
             "url": self.url,
             "filter_name": self.filter_name,
+            "filter_id": self.filter_id,
             "age_text": self.age_text,
             "age_minutes": self.age_minutes,
         }
@@ -171,7 +173,11 @@ class DivarClient:
             if pagination_data:
                 body["pagination_data"] = pagination_data
             data = self._post_search(body)
-            for item in _parse_listings(data, spec.get("name") or query or "divar"):
+            for item in _parse_listings(
+                data,
+                spec.get("name") or query or "divar",
+                str(spec.get("id") or ""),
+            ):
                 if item.token in seen_tokens:
                     continue
                 if _should_exclude(item.title, exclude):
@@ -258,7 +264,7 @@ def _form_data(spec: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _parse_listings(data: dict[str, Any], filter_name: str) -> list[Listing]:
+def _parse_listings(data: dict[str, Any], filter_name: str, filter_id: str = "") -> list[Listing]:
     listings: list[Listing] = []
     for widget in data.get("list_widgets") or []:
         if widget.get("widget_type") != "POST_ROW":
@@ -284,6 +290,7 @@ def _parse_listings(data: dict[str, Any], filter_name: str) -> list[Listing]:
                 filter_name=filter_name,
                 age_text=age_text,
                 age_minutes=parse_age_minutes(age_text),
+                filter_id=filter_id,
             )
         )
     return listings

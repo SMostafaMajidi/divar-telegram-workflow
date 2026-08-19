@@ -29,28 +29,41 @@ def telegram_bot_username(bot_token: str) -> str | None:
     return username
 
 
+def chat_record(chat: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not chat or "id" not in chat:
+        return None
+    return {
+        "id": str(chat["id"]),
+        "type": str(chat.get("type") or ""),
+        "name": str(chat.get("first_name") or chat.get("title") or "").strip(),
+        "username": str(chat.get("username") or ""),
+    }
+
+
+def chat_from_update(update: dict[str, Any]) -> dict[str, Any] | None:
+    for key in ("message", "edited_message", "channel_post", "my_chat_member"):
+        payload = update.get(key) or {}
+        record = chat_record(payload.get("chat"))
+        if record:
+            return record
+    return None
+
+
 def list_recent_chats(bot_token: str) -> list[dict[str, Any]]:
     response = requests.get(
         TELEGRAM_API.format(token=bot_token, method="getUpdates"),
         timeout=20,
+        params={"timeout": 0, "allowed_updates": '["message","edited_message","channel_post","my_chat_member"]'},
     )
     response.raise_for_status()
     data = response.json()
     if not data.get("ok"):
         raise RuntimeError(data.get("description") or "telegram error")
-    chats: dict[int, dict[str, Any]] = {}
+    chats: dict[str, dict[str, Any]] = {}
     for item in data.get("result") or []:
-        for key in ("message", "edited_message", "channel_post", "my_chat_member"):
-            payload = item.get(key) or {}
-            chat = payload.get("chat")
-            if not chat or "id" not in chat:
-                continue
-            chats[chat["id"]] = {
-                "id": chat["id"],
-                "type": chat.get("type") or "",
-                "name": chat.get("first_name") or chat.get("title") or "",
-                "username": chat.get("username") or "",
-            }
+        record = chat_from_update(item)
+        if record:
+            chats[record["id"]] = record
     return list(chats.values())
 
 
@@ -70,14 +83,21 @@ class TelegramNotifier:
         self.timeout = timeout
         self.session = requests.Session()
 
-    def send_listing(self, listing: Listing, rank: int | None = None, reason: str | None = None) -> None:
+    def send_listing(
+        self,
+        listing: Listing,
+        rank: int | None = None,
+        reason: str | None = None,
+        chat_id: str | None = None,
+    ) -> None:
         caption = format_listing(listing, rank=rank, reason=reason)
+        target = str(chat_id or self.chat_id)
         if self.send_photos and listing.image_url:
             try:
                 self._call(
                     "sendPhoto",
                     {
-                        "chat_id": self.chat_id,
+                        "chat_id": target,
                         "photo": listing.image_url,
                         "caption": caption[:1024],
                         "parse_mode": "HTML",
@@ -89,16 +109,21 @@ class TelegramNotifier:
         self._call(
             "sendMessage",
             {
-                "chat_id": self.chat_id,
+                "chat_id": target,
                 "text": caption,
                 "parse_mode": "HTML",
                 "disable_web_page_preview": False,
             },
         )
 
-    def send_text(self, text: str, reply_markup: dict[str, Any] | None = None) -> None:
+    def send_text(
+        self,
+        text: str,
+        reply_markup: dict[str, Any] | None = None,
+        chat_id: str | None = None,
+    ) -> None:
         payload: dict[str, Any] = {
-            "chat_id": self.chat_id,
+            "chat_id": str(chat_id or self.chat_id),
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
@@ -114,7 +139,7 @@ class TelegramNotifier:
             params={
                 "offset": offset,
                 "timeout": timeout,
-                "allowed_updates": '["message"]',
+                "allowed_updates": '["message","edited_message","channel_post","my_chat_member"]',
             },
             timeout=timeout + 10,
         )
