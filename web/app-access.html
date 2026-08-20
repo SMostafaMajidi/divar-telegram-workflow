@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ورود مشتری — دیوار واچر</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-card">
+      <p class="eyebrow">دیوار واچر</p>
+      <h1>ورود به پنل مشتری</h1>
+      <p class="hint">ورود مستقیم با رمز نیست. لینک اختصاصی را از ربات تلگرام دریافت کنید.</p>
+      <ol class="steps">
+        <li>یوزرنیم تلگرام شما توسط پشتیبانی ثبت شده باشد.</li>
+        <li>ربات را باز کنید و <b>/start</b> بزنید.</li>
+        <li>روی لینک «پنل» که ربات می‌فرستد کلیک کنید.</li>
+      </ol>
+      <p class="hint" id="bot-hint">در حال خواندن وضعیت ربات…</p>
+      <p class="meta"><a href="/">بازگشت به خانه</a></p>
+    </section>
+  </main>
+  <script>
+    fetch("/api/status").then(r => r.json()).then(s => {
+      const el = document.getElementById("bot-hint");
+      if (s.bot_username) {
+        el.innerHTML = `ربات: <a href="https://t.me/${s.bot_username}" target="_blank">@${s.bot_username}</a>`;
+      } else {
+        el.textContent = "ربات هنوز پیکربندی نشده است.";
+      }
+    }).catch(() => {});
+  </script>
+</body>
+</html>

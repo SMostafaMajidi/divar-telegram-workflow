@@ -17,7 +17,7 @@ const DEFAULT_EXCLUDE = [
 const state = {
   filters: [],
   status: {},
-  chats: [],
+  user: null,
   categoryTree: [],
   categoryFlat: [],
   categoryTrail: [],
@@ -42,24 +42,18 @@ const els = {
   cityPopular: $("#city-popular"),
   excludeInput: $("#exclude-input"),
   excludeChips: $("#exclude-chips"),
-  telegramPill: $("#telegram-pill"),
-  llmPill: $("#llm-pill"),
-  botPill: $("#bot-pill"),
-  watchPill: $("#watch-pill"),
-  watchBtn: $("#watch-btn"),
+  aiPill: $("#ai-pill"),
   runBtn: $("#run-btn"),
   addBtn: $("#add-btn"),
-  settings: $("#settings-form"),
-  telegramSetup: $("#telegram-setup"),
-  telegramHint: $("#telegram-setup-hint"),
-  detectChatBtn: $("#detect-chat-btn"),
-  refreshChatsBtn: $("#refresh-chats-btn"),
-  chatList: $("#chat-list"),
+  logoutBtn: $("#logout-btn"),
   categorySearch: $("#category-search"),
   categoryGrid: $("#category-grid"),
   categoryCrumb: $("#category-crumb"),
   categorySelected: $("#category-selected"),
   divarFields: $("#divar-fields"),
+  apiKey: null,
+  feedLink: $("#feed-link"),
+  welcome: $("#welcome"),
 };
 
 function el(tag, attrs = {}, children = []) {
@@ -82,10 +76,15 @@ function el(tag, attrs = {}, children = []) {
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  if (res.status === 401) {
+    location.href = "/app/login";
+    throw new Error("نیاز به ورود");
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "خطا در ارتباط با سرور");
   return data;
@@ -104,34 +103,6 @@ function priceText(filter) {
   if (min != null && max != null) return `${min} تا ${max} میلیون`;
   if (min != null) return `از ${min} میلیون`;
   return `تا ${max} میلیون`;
-}
-
-function chatLabel(chat) {
-  const kinds = {
-    private: "خصوصی",
-    group: "گروه",
-    supergroup: "گروه",
-    channel: "کانال",
-  };
-  const kind = kinds[chat.type] || "";
-  const name = chat.name || (chat.username ? `@${chat.username}` : chat.id);
-  return kind ? `${name} · ${kind}` : String(name);
-}
-
-function fillChatSelect(select, selected) {
-  select.replaceChildren(el("option", { value: "", text: "چت پیش‌فرض" }));
-  for (const chat of state.chats) {
-    select.append(el("option", { value: chat.id, text: chatLabel(chat) }));
-  }
-  if (selected && !state.chats.some((item) => String(item.id) === String(selected))) {
-    select.append(el("option", { value: selected, text: selected }));
-  }
-  select.value = selected || "";
-}
-
-function categoryLabel(slug) {
-  const item = state.categoryFlat.find((entry) => entry.slug === slug);
-  return item?.path || slug || "بدون دسته";
 }
 
 function findTrail(slug, nodes = state.categoryTree, trail = []) {
@@ -154,7 +125,7 @@ function setCategory(slug, { drill = false } = {}) {
   }
   const node = state.categoryFlat.find((item) => item.slug === slug);
   els.form.category.value = slug;
-  els.categorySelected.textContent = node?.path || slug || "یک دسته انتخاب کن";
+  els.categorySelected.textContent = node?.path || slug || "یک دسته انتخاب کنید";
   if (drill) {
     const trail = findTrail(slug);
     const last = trail[trail.length - 1];
@@ -259,7 +230,7 @@ function renderCategoryPicker() {
 function renderFilters() {
   els.list.replaceChildren();
   if (!state.filters.length) {
-    els.list.append(el("p", { class: "empty", text: "هنوز فیلتری نساختی." }));
+    els.list.append(el("p", { class: "empty", text: "هنوز فیلتری ثبت نشده است." }));
     return;
   }
   for (const filter of state.filters) {
@@ -287,28 +258,8 @@ function renderFilters() {
       ]),
       el("p", {
         class: "meta",
-        text: `${filter.category_path || filter.category} · ${filter.query || "بدون عبارت"} · ${filter.cities.join("، ")} · ${priceText(filter)}`,
+        text: `${filter.category_path || filter.category} · ${filter.query || "بدون عبارت"} · ${filter.cities.join("، ")} · ${priceText(filter)} · مقصد: ${filter.chat_id || "چت شخصی"}`,
       }),
-      el("label", { class: "chat-target" }, [
-        "ارسال به چت",
-        (() => {
-          const select = el("select");
-          fillChatSelect(select, filter.chat_id);
-          select.addEventListener("change", async () => {
-            try {
-              const data = await api(`/api/filters/${filter.id}/chat`, {
-                method: "POST",
-                body: { chat_id: select.value },
-              });
-              replaceFilter(data.filter);
-              toast("مقصد این فیلتر ذخیره شد", "ok");
-            } catch (err) {
-              toast(err.message, "err");
-            }
-          });
-          return select;
-        })(),
-      ]),
       el("div", { class: "card-actions" }, [
         el("button", {
           class: "ghost small",
@@ -342,59 +293,14 @@ function replaceFilter(updated) {
 }
 
 function renderStatus() {
-  const ready = !!state.status.telegram_ready;
-  const hasToken = !!state.status.telegram_token;
-  const bot = state.status.bot_username;
-  els.telegramPill.textContent = ready
-    ? "تلگرام وصل است"
-    : hasToken
-      ? "مقصد چت ندارد"
-      : "تلگرام تنظیم نشده";
-  els.telegramPill.className = `pill ${ready ? "ok" : "warn"}`;
-  els.llmPill.textContent = state.status.llm_ready
-    ? `مدل ${state.status.llm_model || ""}`.trim()
-    : "مدل تنظیم نشده";
-  els.llmPill.className = `pill ${state.status.llm_ready ? "ok" : "warn"}`;
-  els.botPill.textContent = state.status.bot_running ? "ربات روشن" : "ربات خاموش";
-  els.botPill.className = `pill ${state.status.bot_running ? "ok" : ""}`;
-  els.watchPill.textContent = state.status.watching ? "پایش روشن" : "پایش خاموش";
-  els.watchPill.className = `pill ${state.status.watching ? "ok" : ""}`;
-  els.watchBtn.textContent = state.status.watching ? "توقف پایش" : "شروع پایش";
-  els.settings.poll_interval_minutes.value = state.status.poll_interval_minutes || 3;
-  els.settings.best_count.value = state.status.best_count || 5;
-  els.settings.send_photos.checked = !!state.status.send_photos;
-
-  const needsChat = hasToken && !state.status.telegram_chat;
-  els.telegramSetup.hidden = !hasToken;
-  if (hasToken) {
-    const botLabel = bot ? `@${bot}` : "ربات";
-    els.telegramHint.replaceChildren(
-      bot
-        ? el("a", { href: `https://t.me/${bot}`, target: "_blank", text: botLabel })
-        : botLabel,
-      " را به گروه یا چت مورد نظر اضافه کن، ",
-      el("b", { text: "/start" }),
-      " بزن، بعد لیست چت‌ها را تازه کن و برای هر فیلتر مقصد را انتخاب کن.",
-      needsChat ? " هنوز مقصد پیش‌فرض ذخیره نشده." : ""
-    );
-  }
-  renderChatList();
-}
-
-function renderChatList() {
-  if (!els.chatList) return;
-  els.chatList.replaceChildren();
-  if (!state.chats.length) {
-    els.chatList.append(el("li", { text: "هنوز چتی ثبت نشده. /start بزن و تازه کن." }));
-    return;
-  }
-  for (const chat of state.chats) {
-    const isDefault = String(chat.id) === String(state.status.default_chat_id || "");
-    els.chatList.append(
-      el("li", {
-        text: `${chatLabel(chat)}${isDefault ? " (پیش‌فرض)" : ""}`,
-      })
-    );
+  if (!state.user) return;
+  els.welcome.textContent = `@${state.user.login_username || state.user.telegram_username}`;
+  els.aiPill.textContent = state.user.ai_enabled ? "هوش مصنوعی فعال" : "هوش مصنوعی غیرفعال";
+  els.aiPill.className = `pill ${state.user.ai_enabled ? "ok" : "warn"}`;
+  els.runBtn.disabled = !state.user.ai_enabled;
+  if (els.feedLink) {
+    const slug = state.user.public_slug || state.user.login_username || state.user.telegram_username;
+    els.feedLink.innerHTML = `صفحه اختصاصی: <a href="/u/${slug}" target="_blank">/u/${slug}</a>`;
   }
 }
 
@@ -451,8 +357,8 @@ function formPayload() {
     exclude_title: state.exclude,
     max_pages: data.get("max_pages") || 3,
     enabled: els.form.enabled.checked,
-    chat_id: data.get("chat_id") || "",
     category: data.get("category") || "",
+    chat_id: data.get("chat_id") || "",
     fields: collectDivarFields(),
   };
 }
@@ -664,7 +570,7 @@ function openEditor(filter = null) {
   els.form.query.value = filter?.query || "";
   els.form.max_pages.value = filter?.max_pages || 3;
   els.form.enabled.checked = filter ? !!filter.enabled : true;
-  fillChatSelect(els.form.chat_id, filter?.chat_id || "");
+  if (els.form.chat_id) els.form.chat_id.value = filter?.chat_id || "";
   state.divarValues = { ...(filter?.fields || {}) };
   const slug = filter?.category || "light";
   els.form.category.value = slug;
@@ -819,8 +725,12 @@ $("#close-editor").addEventListener("click", () => els.editor.close());
 els.addBtn.addEventListener("click", () => openEditor());
 
 els.runBtn.addEventListener("click", async () => {
+  if (!state.user?.ai_enabled) {
+    toast("رتبه‌بندی هوشمند برای حساب شما فعال نیست. از پشتیبانی درخواست دهید.", "err");
+    return;
+  }
   els.runBtn.disabled = true;
-  toast("در حال انتخاب ۵ آگهی برتر…");
+  toast("در حال انتخاب آگهی‌های برتر…");
   try {
     const data = await api("/api/run", { method: "POST", body: {} });
     toast(data.message, "ok");
@@ -828,114 +738,40 @@ els.runBtn.addEventListener("click", async () => {
   } catch (err) {
     toast(err.message, "err");
   } finally {
-    els.runBtn.disabled = false;
+    els.runBtn.disabled = !state.user?.ai_enabled;
   }
 });
 
-els.refreshChatsBtn.addEventListener("click", async () => {
-  els.refreshChatsBtn.disabled = true;
-  toast("در حال خواندن چت‌های ذخیره‌شده…");
-  try {
-    await loadChats();
-    renderFilters();
-    renderStatus();
-    toast(state.chats.length ? `${state.chats.length} چت پیدا شد` : "چتی نیست؛ /start بزن", "ok");
-  } catch (err) {
-    toast(err.message, "err");
-  } finally {
-    els.refreshChatsBtn.disabled = false;
-  }
-});
-
-els.detectChatBtn.addEventListener("click", async () => {
-  els.detectChatBtn.disabled = true;
-  toast("در حال خواندن Chat ID از تلگرام…");
-  try {
-    const data = await api("/api/telegram/detect-chat", { method: "POST", body: {} });
-    if (data.chats) state.chats = data.chats;
-    if (data.status) state.status = { ...state.status, ...data.status };
-    renderFilters();
-    renderStatus();
-    toast(
-      data.saved
-        ? `چت پیش‌فرض ذخیره شد: ${data.chat_id}`
-        : "چند چت هست؛ برای هر فیلتر مقصد را جدا انتخاب کن.",
-      "ok"
-    );
-  } catch (err) {
-    toast(err.message, "err");
-  } finally {
-    els.detectChatBtn.disabled = false;
-  }
-});
-
-els.watchBtn.addEventListener("click", async () => {
-  try {
-    const action = state.status.watching ? "stop" : "start";
-    const data = await api("/api/watch", { method: "POST", body: { action } });
-    state.status.watching = data.watching;
-    renderStatus();
-    toast(
-      data.watching
-        ? (data.next_watch_at
-          ? `پایش روشن شد؛ نوبت بعدی ساعت ${data.next_watch_at} — فقط تازه‌ترین‌ها`
-          : "پایش روشن شد؛ فقط آگهی‌های تازه می‌آیند.")
-        : "پایش متوقف شد",
-      "ok",
-    );
-  } catch (err) {
-    toast(err.message, "err");
-  }
-});
-
-els.settings.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    state.status = await api("/api/settings", {
-      method: "PUT",
-      body: {
-        poll_interval_minutes: Number(els.settings.poll_interval_minutes.value),
-        best_count: Number(els.settings.best_count.value),
-        send_photos: els.settings.send_photos.checked,
-      },
-    });
-    renderStatus();
-    toast("تنظیمات ذخیره شد", "ok");
-  } catch (err) {
-    toast(err.message, "err");
-  }
+els.logoutBtn?.addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST", body: {} });
+  location.href = "/app/login";
 });
 
 els.categorySearch?.addEventListener("input", () => {
   renderCategoryPicker();
 });
 
-async function loadChats() {
-  const data = await api("/api/telegram/chats");
-  state.chats = data.chats || [];
+async function loadFeed() {
+  const data = await api("/api/feed");
+  renderResults(data.listings || [], "آگهی‌های اخیر", `${(data.listings || []).length} مورد`);
 }
 
 async function boot() {
   try {
-    const [filters, status, categories] = await Promise.all([
+    const [me, filters, categories] = await Promise.all([
+      api("/api/me"),
       api("/api/filters"),
-      api("/api/status"),
       api("/api/categories"),
     ]);
+    state.user = me.user;
     state.filters = filters.filters || [];
-    state.status = status;
     state.categoryTree = categories.tree || [];
     state.categoryFlat = categories.flat || [];
-    try {
-      await loadChats();
-    } catch (_err) {
-      state.chats = [];
-    }
     renderFilters();
     renderStatus();
-    renderResults([], "نتایج");
+    await loadFeed();
   } catch (err) {
-    toast(err.message, "err");
+    location.replace("/app/login");
   }
 }
 

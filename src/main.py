@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import argparse
 
+import db
 from config_store import AppError, detect_telegram_chat, load_config, load_dotenv
 from notifier import TelegramNotifier
-from runner import build_notifier, send_best
+from runner import build_notifier, send_best_for_user
 
 
 def main() -> None:
     load_dotenv()
+    db.init_db()
     parser = argparse.ArgumentParser(description="Search Divar and send listings to Telegram")
     parser.add_argument(
         "command",
@@ -54,11 +56,15 @@ def main() -> None:
         return
 
     if args.command == "once":
-        try:
-            result = send_best()
-        except AppError as exc:
-            raise SystemExit(str(exc)) from exc
-        print(result["message"])
+        users = [u for u in db.list_users() if u.get("active") and u.get("ai_enabled")]
+        if not users:
+            raise SystemExit("No active users with AI enabled.")
+        for user in users:
+            try:
+                result = send_best_for_user(user)
+                print(f"@{user['telegram_username']}: {result['message']}")
+            except AppError as exc:
+                print(f"@{user['telegram_username']}: {exc}")
         return
 
     if args.command == "watch":

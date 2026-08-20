@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>فیلترهای دیوار</title>
+  <title>دیوار واچر</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,115 +13,34 @@
   <header class="topbar">
     <div>
       <p class="eyebrow">دیوار واچر</p>
-      <h1>فیلتر آگهی‌ها</h1>
+      <h1>سرویس پایش آگهی</h1>
     </div>
     <div class="top-actions">
-      <span id="telegram-pill" class="pill">تلگرام</span>
-      <span id="llm-pill" class="pill">مدل</span>
-      <span id="bot-pill" class="pill">ربات</span>
-      <span id="watch-pill" class="pill">پایش خاموش</span>
-      <button id="watch-btn" class="ghost" type="button">شروع پایش</button>
-      <button id="run-btn" class="primary" type="button">ارسال ۵ تای برتر</button>
+      <a class="primary small" href="/admin/login">پنل ادمین</a>
+      <a class="ghost small" href="/app/login">ورود مشتری</a>
     </div>
   </header>
-
-  <main class="layout">
-    <section class="panel filters-panel">
-      <div class="panel-head">
-        <h2>فیلترها</h2>
-        <button id="add-btn" class="primary small" type="button">افزودن فیلتر</button>
-      </div>
-      <p class="hint">پایش فقط آگهی‌های تازه را می‌فرستد. برای هر فیلتر مشخص کن به کدام چت تلگرام برود.</p>
-      <div id="filter-list" class="filter-list"></div>
-      <form id="settings-form" class="settings">
-        <h3>تنظیمات ارسال</h3>
-        <label>فاصله پایش از ساعت ۰۰:۰۰ (دقیقه)
-          <input name="poll_interval_minutes" type="number" min="1" step="1">
-        </label>
-        <label>تعداد آگهی برتر
-          <input name="best_count" type="number" min="1" max="10">
-        </label>
-        <label class="check">
-          <input name="send_photos" type="checkbox">
-          ارسال عکس آگهی
-        </label>
-        <button type="submit" class="ghost small">ذخیره تنظیمات</button>
-      </form>
-      <div id="telegram-setup" class="telegram-setup" hidden>
-        <h3>چت‌های تلگرام</h3>
-        <p id="telegram-setup-hint" class="hint"></p>
-        <div class="row">
-          <button id="refresh-chats-btn" class="primary small" type="button">تازه‌کردن لیست چت‌ها</button>
-          <button id="detect-chat-btn" class="ghost small" type="button">ذخیره چت پیش‌فرض</button>
-        </div>
-        <ul id="chat-list" class="chat-list"></ul>
-      </div>
-    </section>
-
-    <section class="panel results-panel">
-      <div class="panel-head">
-        <h2 id="results-title">نتایج</h2>
-        <span id="results-meta" class="muted"></span>
-      </div>
-      <div id="toast" class="toast" hidden></div>
-      <div id="results" class="results"></div>
+  <main class="layout single">
+    <section class="panel">
+      <h2>شروع کار</h2>
+      <ol class="steps">
+        <li>ربات رسمی را در تلگرام باز کنید و <b>/start</b> بزنید.</li>
+        <li>یوزرنیم و رمز عبور دلخواه برای پنل را تعیین کنید.</li>
+        <li>با همان مشخصات وارد پنل وب شوید و فیلتر بسازید.</li>
+        <li>پایش به‌صورت خودکار آگهی‌های تازه را به چت تلگرام شما می‌فرستد.</li>
+      </ol>
+      <p class="hint" id="bot-hint">در حال خواندن وضعیت سرویس…</p>
     </section>
   </main>
-
-  <dialog id="editor">
-    <form id="filter-form" method="dialog">
-      <header>
-        <h2 id="editor-title">فیلتر جدید</h2>
-        <button type="button" class="icon" id="close-editor" aria-label="بستن">×</button>
-      </header>
-      <input type="hidden" name="id">
-      <label>نام فیلتر
-        <input name="name" required placeholder="مثلاً پراید اصفهان">
-      </label>
-      <label>عبارت جستجو
-        <input name="query" required placeholder="پراید">
-      </label>
-      <div class="field">
-        <span>شهرها</span>
-        <div id="city-chips" class="chips"></div>
-        <input id="city-input" autocomplete="off" placeholder="جستجوی شهر، مثلاً اصفهان">
-        <div id="city-suggest" class="suggest" hidden></div>
-        <div id="city-popular" class="popular"></div>
-      </div>
-      <div class="row">
-        <label>حداقل قیمت (میلیون تومان)
-          <input name="price_min_million" type="number" min="0" step="1" placeholder="300">
-        </label>
-        <label>حداکثر قیمت (میلیون تومان)
-          <input name="price_max_million" type="number" min="0" step="1" placeholder="450">
-        </label>
-      </div>
-      <div class="field">
-        <span>کلمات حذف از عنوان</span>
-        <div id="exclude-chips" class="chips"></div>
-        <input id="exclude-input" placeholder="مثلاً شاسی خورده و Enter">
-      </div>
-      <div class="row">
-        <label>تعداد صفحات دیوار
-          <input name="max_pages" type="number" min="1" max="8" value="3">
-        </label>
-        <label>ارسال به چت
-          <select name="chat_id">
-            <option value="">چت پیش‌فرض</option>
-          </select>
-        </label>
-      </div>
-      <label class="check end">
-        <input name="enabled" type="checkbox" checked>
-        فعال باشد
-      </label>
-      <footer>
-        <button type="button" id="preview-form-btn" class="ghost">پیش‌نمایش</button>
-        <button type="submit" class="primary">ذخیره فیلتر</button>
-      </footer>
-    </form>
-  </dialog>
-
-  <script src="/app.js"></script>
+  <script>
+    fetch("/api/status").then(r => r.json()).then(s => {
+      const el = document.getElementById("bot-hint");
+      if (s.bot_username) {
+        el.innerHTML = `ربات سرویس: <a href="https://t.me/${s.bot_username}" target="_blank">@${s.bot_username}</a>`;
+      } else {
+        el.textContent = "ربات هنوز پیکربندی نشده است.";
+      }
+    }).catch(() => {});
+  </script>
 </body>
 </html>

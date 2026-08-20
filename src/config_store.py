@@ -93,19 +93,34 @@ def _ensure_filter_ids(config: dict[str, Any]) -> bool:
     return changed
 
 
+def merged_fields(spec: dict[str, Any]) -> dict[str, Any]:
+    from divar import merged_search_fields
+
+    return merged_search_fields(spec)
+
+
 def filter_to_api(spec: dict[str, Any]) -> dict[str, Any]:
+    from categories import find_category
+
+    category = str(spec.get("category") or "light").strip() or "light"
+    info = find_category(category) or {}
+    fields = merged_fields(spec)
+    price = fields.get("price") if isinstance(fields.get("price"), dict) else {}
     return {
         "id": spec.get("id"),
         "name": spec.get("name") or "",
         "enabled": spec.get("enabled", True),
-        "category": spec.get("category") or "light",
+        "category": category,
+        "category_name": info.get("name") or category,
+        "category_path": info.get("path") or category,
         "query": spec.get("query") or "",
         "cities": list(spec.get("cities") or []),
-        "price_min_million": _to_million(spec.get("price_min_toman")),
-        "price_max_million": _to_million(spec.get("price_max_toman")),
+        "price_min_million": _to_million(price.get("min") or spec.get("price_min_toman")),
+        "price_max_million": _to_million(price.get("max") or spec.get("price_max_toman")),
         "exclude_title": list(spec.get("exclude_title") or []),
         "max_pages": int(spec.get("max_pages") or 3),
         "chat_id": str(spec.get("chat_id") or "").strip(),
+        "fields": fields,
     }
 
 
@@ -114,27 +129,41 @@ def filter_from_api(body: dict[str, Any], existing: dict[str, Any] | None = None
     spec["id"] = str(body.get("id") or spec.get("id") or uuid.uuid4().hex[:10])
     name = str(body.get("name") or "").strip()
     query = str(body.get("query") or "").strip()
+    category = str(body.get("category") or spec.get("category") or "").strip()
     if not name:
         raise AppError("Enter a filter name.")
-    if not query:
-        raise AppError("Enter a search query, e.g. Pride.")
+    if not category:
+        raise AppError("Select a Divar category.")
     cities = _clean_list(body.get("cities"))
     if not cities:
         raise AppError("Select at least one city.")
+    fields = body.get("fields")
+    if not isinstance(fields, dict):
+        fields = dict(spec.get("fields") or {})
+    price_min = _from_million(body.get("price_min_million"))
+    price_max = _from_million(body.get("price_max_million"))
+    if "price" not in fields and (price_min is not None or price_max is not None):
+        fields["price"] = {k: v for k, v in (("min", price_min), ("max", price_max)) if v is not None}
+    chassis = str(body.get("chassis_status") or "").strip()
+    if chassis and "chassis_status" not in fields:
+        fields["chassis_status"] = chassis
+    price = fields.get("price") if isinstance(fields.get("price"), dict) else {}
     spec.update(
         {
             "name": name,
             "enabled": bool(body.get("enabled", True)),
-            "category": str(body.get("category") or "light").strip() or "light",
+            "category": category,
             "query": query,
             "cities": cities,
-            "price_min_toman": _from_million(body.get("price_min_million")),
-            "price_max_toman": _from_million(body.get("price_max_million")),
+            "price_min_toman": price.get("min", price.get("minimum", price_min)),
+            "price_max_toman": price.get("max", price.get("maximum", price_max)),
             "exclude_title": _clean_list(body.get("exclude_title")),
             "max_pages": max(1, min(int(body.get("max_pages") or 3), 8)),
             "chat_id": str(body.get("chat_id") if "chat_id" in body else spec.get("chat_id") or "").strip(),
+            "fields": fields,
         }
     )
+    spec.pop("chassis_status", None)
     return spec
 
 
@@ -298,12 +327,38 @@ def format_slot_time(when: datetime | None = None) -> str:
     return when.astimezone(APP_TZ).strftime("%H:%M")
 
 
+def admin_token() -> str:
+    load_dotenv()
+    return os.getenv("ADMIN_TOKEN", "").strip()
+
+
+def admin_username() -> str:
+    load_dotenv()
+    return os.getenv("ADMIN_USERNAME", "").strip()
+
+
+def admin_password() -> str:
+    load_dotenv()
+    return os.getenv("ADMIN_PASSWORD", "").strip()
+
+
+def admin_credentials_ok(username: str, password: str) -> bool:
+    expected_user = admin_username()
+    expected_pass = admin_password()
+    if not expected_user or not expected_pass:
+        return False
+    return username.strip() == expected_user and password == expected_pass
+
+
+def public_base_url() -> str:
+    load_dotenv()
+    return (os.getenv("PUBLIC_BASE_URL") or "http://127.0.0.1:8765").rstrip("/")
+
+
 def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     config = config or load_config()
     load_dotenv()
-    filters = config.get("filters") or []
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     from notifier import telegram_bot_username
     seconds = poll_interval_seconds(config)
     return {
@@ -313,14 +368,12 @@ def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "send_on_first_run": bool(config.get("send_on_first_run", True)),
         "send_photos": bool((config.get("telegram") or {}).get("send_photos", True)),
         "telegram_token": bool(token),
-        "telegram_chat": bool(chat_id) or any(str(f.get("chat_id") or "").strip() for f in filters),
-        "telegram_ready": bool(token and (chat_id or any(str(f.get("chat_id") or "").strip() for f in filters))),
-        "default_chat_id": chat_id,
+        "telegram_ready": bool(token),
         "bot_username": telegram_bot_username(token) if token else None,
         "llm_ready": bool((os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()),
         "llm_model": (os.getenv("LLM_MODEL") or "gpt-4o-mini").strip(),
-        "filter_count": len(filters),
-        "enabled_count": sum(1 for f in filters if f.get("enabled", True)),
+        "public_base_url": public_base_url(),
+        "admin_configured": bool(admin_username() and admin_password()) or bool(admin_token()),
     }
 
 

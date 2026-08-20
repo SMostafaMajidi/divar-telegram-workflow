@@ -1,28 +1,39 @@
-# دیوار → تلگرام
+# دیوار واچر — سرویس چندمستأجری
 
-Watch sends only ads posted in the latest poll window. `/best` first applies your Divar filters, then an LLM ranks the remaining ads if `LLM_API_KEY` is set.
+پایش آگهی‌های دیوار و ارسال به تلگرام، صفحه اختصاصی و API.
 
-```
-config/     filters and send settings
-data/       seen ads and city cache
-src/        Python app
-web/        UI
-deploy/     Docker
-.env        Telegram and optional LLM keys
-```
-
-## Run
+## اجرا
 
 ```bash
-cp .env.example .env   # fill TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
+cp .env.example .env
+# TELEGRAM_BOT_TOKEN، ADMIN_USERNAME / ADMIN_PASSWORD و PUBLIC_BASE_URL را پر کنید
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-Open [http://127.0.0.1:8765](http://127.0.0.1:8765)
+- خانه: http://127.0.0.1:8765/
+- ادمین: http://127.0.0.1:8765/admin/login
+- ورود مشتری: http://127.0.0.1:8765/app/login
 
-Start watch from the web page. In Telegram, send `/start`, then `/best` or «۵ تا بهترین».
+پایش و ربات با بالا آمدن سرویس خودکار شروع می‌شوند.
 
-```bash
-docker compose -f deploy/docker-compose.yml logs -f
-docker compose -f deploy/docker-compose.yml down
+## ثبت‌نام مشتری (خودکار)
+
+1. در ربات `/start` بزند.
+2. یوزرنیم و رمز دلخواه پنل را بفرستد.
+3. با همان مشخصات وارد `/app/login` شود و فیلتر بسازد.
+4. آگهی‌های تازه به چت تلگرام همان کاربر می‌رود.
+
+## API
+
+مشتری کلید داخلی نمی‌بیند. از یوزرنیم/رمز پنل با Basic Auth استفاده می‌کند:
+
+```http
+GET /api/v1/listings?limit=50
+Authorization: Basic base64(username:password)
 ```
+
+مستندات داخل پنل: `/app/api`
+
+## ادمین
+
+ورود با `ADMIN_USERNAME` / `ADMIN_PASSWORD`. مدیریت مشتریان و تنظیمات سراسری از `/admin`.

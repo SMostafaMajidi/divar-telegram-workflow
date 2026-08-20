@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ادمین — دیوار واچر</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ادمین</p>
+      <h1>مدیریت مشتریان</h1>
+    </div>
+    <div class="top-actions">
+      <span id="watch-pill" class="pill">پایش خاموش</span>
+      <button id="watch-btn" class="ghost" type="button">شروع پایش</button>
+      <button id="logout-btn" class="ghost" type="button">خروج</button>
+      <a class="ghost small" href="/">خانه</a>
+    </div>
+  </header>
+  <main class="layout">
+    <section class="panel">
+      <p id="toast" class="toast" hidden></p>
+
+      <form id="create-form" class="settings">
+        <h3>افزودن مشتری</h3>
+        <label>یوزرنیم تلگرام
+          <input name="telegram_username" required placeholder="بدون @">
+        </label>
+        <label>نام نمایشی
+          <input name="display_name" placeholder="اختیاری">
+        </label>
+        <label class="check">
+          <input name="ai_enabled" type="checkbox">
+          فعال‌سازی رتبه‌بندی هوشمند
+        </label>
+        <button class="primary small" type="submit">ساخت حساب</button>
+      </form>
+
+      <form id="settings-form" class="settings">
+        <h3>تنظیمات سراسری</h3>
+        <label>فاصله پایش (دقیقه)
+          <input name="poll_interval_minutes" type="number" min="1">
+        </label>
+        <label>تعداد آگهی برتر
+          <input name="best_count" type="number" min="1" max="10">
+        </label>
+        <label class="check">
+          <input name="send_photos" type="checkbox">
+          ارسال عکس
+        </label>
+        <button class="ghost small" type="submit">ذخیره تنظیمات</button>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>مشتریان</h2></div>
+      <div id="user-list" class="filter-list"></div>
+    </section>
+  </main>
+  <script src="/admin.js"></script>
+</body>
+</html>

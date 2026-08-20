@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API — دیوار واچر</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">پنل مشتری</p>
+      <h1>دسترسی API</h1>
+    </div>
+    <div class="top-actions">
+      <a class="ghost small" href="/app">بازگشت به پنل</a>
+    </div>
+  </header>
+  <main class="layout single">
+    <section class="panel">
+      <p class="hint">برای اتصال اپ خودتان از یوزرنیم و رمز ورود پنل استفاده کنید. کلید داخلی روی سرور می‌ماند و در اختیار مشتری قرار نمی‌گیرد.</p>
+      <h3>نمونه درخواست</h3>
+      <pre class="code-block" id="sample"></pre>
+      <p class="meta">مسیر: <code>GET /api/v1/listings?limit=50</code></p>
+      <p class="meta">هدر: <code>Authorization: Basic پایه۶۴(یوزرنیم:رمز)</code></p>
+      <p id="feed-link" class="meta"></p>
+      <p id="toast" class="toast" hidden></p>
+    </section>
+  </main>
+  <script src="/app-api.js"></script>
+</body>
+</html>

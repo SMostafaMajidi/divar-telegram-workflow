@@ -11,6 +11,8 @@ import requests
 
 SEARCH_URL = "https://api.divar.ir/v8/postlist/w/search"
 CITIES_URL = "https://api.divar.ir/v8/places/cities"
+FILTERS_URL = "https://api.divar.ir/v8/postlist/w/filters"
+CATEGORIES_URL = "https://api.divar.ir/v8/postlist/w/categories"
 POST_URL = "https://divar.ir/v/a/{token}"
 
 HEADERS = {
@@ -85,6 +87,8 @@ class DivarClient:
         self.session.headers.update(HEADERS)
         self._cities: dict[str, int] | None = None
         self._city_records: list[dict[str, Any]] | None = None
+        self._category_tree: list[dict[str, Any]] | None = None
+        self._filter_fields: dict[str, list[dict[str, Any]]] = {}
 
     def resolve_city_ids(self, cities: Iterable[str | int]) -> list[str]:
         mapping = self._city_map()
@@ -191,6 +195,39 @@ class DivarClient:
             time.sleep(0.4)
         return listings
 
+    def category_tree(self) -> list[dict[str, Any]]:
+        if self._category_tree is not None:
+            return self._category_tree
+        cache_path = self.cache_dir / "categories.json"
+        cached = self._load_json_cache(cache_path, max_age=24 * 3600)
+        if cached:
+            self._category_tree = cached
+            return cached
+        response = self.session.get(CATEGORIES_URL, timeout=self.timeout)
+        response.raise_for_status()
+        root = (response.json() or {}).get("category") or {}
+        tree = [_slim_category(child) for child in root.get("children") or []]
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(tree, ensure_ascii=False), encoding="utf-8")
+        self._category_tree = tree
+        return tree
+
+    def filter_fields(self, category: str, city_ids: list[str] | None = None) -> list[dict[str, Any]]:
+        slug = (category or "ROOT").strip() or "ROOT"
+        if slug in self._filter_fields:
+            return self._filter_fields[slug]
+        payload = {
+            "city_ids": city_ids or ["4"],
+            "source_view": "CATEGORY",
+            "data": {"form_data": {"data": {"category": {"str": {"value": slug}}}}},
+        }
+        response = self.session.post(FILTERS_URL, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        widgets = ((response.json() or {}).get("page") or {}).get("widget_list") or []
+        fields = parse_filter_widgets(widgets)
+        self._filter_fields[slug] = fields
+        return fields
+
     def _post_search(self, payload: dict[str, Any]) -> dict[str, Any]:
         response = self.session.post(SEARCH_URL, json=payload, timeout=self.timeout)
         response.raise_for_status()
@@ -219,23 +256,24 @@ class DivarClient:
         )
         return cities
 
-    def _load_cities_cache(self, cache_path: Path) -> list[dict[str, Any]] | None:
-        if not cache_path.exists():
-            return None
-        age = time.time() - cache_path.stat().st_mtime
-        if age > 7 * 24 * 3600:
-            return None
-        try:
-            return json.loads(cache_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return None
-
     def _records(self) -> list[dict[str, Any]]:
         if self._city_records is not None:
             return self._city_records
         cache_path = self.cache_dir / "cities.json"
-        self._city_records = self._load_cities_cache(cache_path) or self._fetch_cities(cache_path)
+        self._city_records = self._load_json_cache(cache_path, max_age=7 * 24 * 3600) or self._fetch_cities(cache_path)
         return self._city_records
+
+    def _load_json_cache(self, cache_path: Path, max_age: float) -> list[dict[str, Any]] | None:
+        if not cache_path.exists():
+            return None
+        age = time.time() - cache_path.stat().st_mtime
+        if age > max_age:
+            return None
+        try:
+            data = json.loads(cache_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+        return data if isinstance(data, list) else None
 
 
 def _city_item(city: dict[str, Any]) -> dict[str, Any]:
@@ -246,21 +284,121 @@ def _city_item(city: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _slim_category(node: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "slug": str(node.get("slug") or ""),
+        "name": str(node.get("name") or node.get("second_name") or node.get("slug") or ""),
+        "children": [_slim_category(child) for child in node.get("children") or []],
+    }
+
+
+def _option(item: dict[str, Any]) -> dict[str, str] | None:
+    value = item.get("value", item.get("key"))
+    if value is None:
+        value = ""
+    display = str(item.get("display") or item.get("title") or value)
+    return {"value": str(value), "label": display}
+
+
+def parse_filter_widgets(widgets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    fields: list[dict[str, Any]] = []
+    pending_title = ""
+    skip_keys = {"districts", "addon_service_tags"}
+    for widget in widgets:
+        data = widget.get("data") or {}
+        wtype = str(widget.get("widget_type") or "")
+        if wtype == "TITLE_ROW":
+            pending_title = str(data.get("text") or "").strip()
+            continue
+        field = data.get("field") or {}
+        key = str(field.get("key") or "").strip()
+        if not key or key in skip_keys:
+            pending_title = ""
+            continue
+        title = (
+            str(data.get("title") or "").strip()
+            or str(data.get("filter_page_title") or "").strip()
+            or str(data.get("bottom_sheet_title") or "").strip()
+            or pending_title
+            or key
+        )
+        pending_title = ""
+        kind = str(field.get("type") or "str")
+        if wtype.endswith("LAZY_MULTI_SELECT_HIERARCHY_ROW") or wtype.endswith("LAZY_MULTI_SELECT_DISTRICT_ROW"):
+            ui = "tags"
+        elif kind == "boolean":
+            ui = "toggle"
+        elif kind == "number_range":
+            ui = "range_select" if data.get("from_options") or data.get("to_options") else "range_input"
+        elif kind == "repeated_string":
+            ui = "chips" if wtype.endswith("CHIP_ROW") else "multi"
+        else:
+            ui = "select"
+        options = [_option(item) for item in data.get("options") or [] if isinstance(item, dict)]
+        from_options = [_option(item) for item in data.get("from_options") or [] if isinstance(item, dict)]
+        to_options = [_option(item) for item in data.get("to_options") or [] if isinstance(item, dict)]
+        fields.append(
+            {
+                "key": key,
+                "title": title,
+                "kind": kind,
+                "ui": ui,
+                "unit": str(data.get("unit") or ""),
+                "placeholder": str(data.get("placeholder") or ""),
+                "options": [item for item in options if item],
+                "from_options": [item for item in from_options if item],
+                "to_options": [item for item in to_options if item],
+            }
+        )
+    return fields
+
+
+def merged_search_fields(spec: dict[str, Any]) -> dict[str, Any]:
+    fields = dict(spec.get("fields") or {})
+    if "price" not in fields:
+        price: dict[str, Any] = {}
+        if spec.get("price_min_toman") is not None:
+            price["min"] = spec["price_min_toman"]
+        if spec.get("price_max_toman") is not None:
+            price["max"] = spec["price_max_toman"]
+        if price:
+            fields["price"] = price
+    if "chassis_status" not in fields and spec.get("chassis_status"):
+        fields["chassis_status"] = spec["chassis_status"]
+    return fields
+
+
+def encode_search_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    encoded: dict[str, Any] = {}
+    for key, value in (fields or {}).items():
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, bool):
+            encoded[str(key)] = {"boolean": {"value": value}}
+        elif isinstance(value, list):
+            values = [str(item).strip() for item in value if str(item).strip()]
+            if values:
+                encoded[str(key)] = {"repeated_string": {"value": values}}
+        elif isinstance(value, dict):
+            rng: dict[str, str] = {}
+            minimum = value.get("min", value.get("minimum"))
+            maximum = value.get("max", value.get("maximum"))
+            if minimum not in (None, ""):
+                rng["minimum"] = str(minimum)
+            if maximum not in (None, ""):
+                rng["maximum"] = str(maximum)
+            if rng:
+                encoded[str(key)] = {"number_range": rng}
+        else:
+            encoded[str(key)] = {"str": {"value": str(value)}}
+    return encoded
+
+
 def _form_data(spec: dict[str, Any]) -> dict[str, Any]:
     data: dict[str, Any] = {
-        "category": {"str": {"value": spec.get("category") or "light"}},
+        "category": {"str": {"value": spec.get("category") or "ROOT"}},
     }
-    price: dict[str, str] = {}
-    if spec.get("price_min_toman") is not None:
-        price["minimum"] = str(int(spec["price_min_toman"]))
-    if spec.get("price_max_toman") is not None:
-        price["maximum"] = str(int(spec["price_max_toman"]))
-    if price:
-        data["price"] = {"number_range": price}
-    category = spec.get("category") or "light"
-    chassis = spec.get("chassis_status", "both-healthy")
-    if category == "light" and chassis:
-        data["chassis_status"] = {"str": {"value": str(chassis)}}
+    data.update(encode_search_fields(merged_search_fields(spec)))
     return data
 
 

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ورود ادمین — دیوار واچر</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-card">
+      <p class="eyebrow">دیوار واچر</p>
+      <h1>ورود ادمین</h1>
+      <p class="hint">برای مدیریت مشتریان وارد شوید.</p>
+      <form id="login-form">
+        <label>یوزرنیم
+          <input name="username" autocomplete="username" required>
+        </label>
+        <label>رمز عبور
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="primary" type="submit">ورود</button>
+      </form>
+      <p id="toast" class="toast" hidden></p>
+      <p class="meta"><a href="/">بازگشت به خانه</a></p>
+    </section>
+  </main>
+  <script src="/admin-login.js"></script>
+</body>
+</html>

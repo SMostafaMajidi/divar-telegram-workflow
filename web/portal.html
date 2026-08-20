@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>پنل مشتری — دیوار واچر</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">پنل مشتری</p>
+      <h1 id="welcome">فیلترها و آگهی‌ها</h1>
+    </div>
+    <div class="top-actions">
+      <span id="ai-pill" class="pill">هوش مصنوعی</span>
+      <button id="run-btn" class="primary" type="button">ارسال بهترین‌ها</button>
+      <button id="logout-btn" class="ghost" type="button">خروج</button>
+    </div>
+  </header>
+  <main class="layout">
+    <section class="panel filters-panel">
+      <div class="panel-head">
+        <h2>فیلترها</h2>
+        <button id="add-btn" class="primary small" type="button">افزودن فیلتر</button>
+      </div>
+      <p class="hint">دسته را انتخاب کنید؛ فیلدهای همان دسته از دیوار بارگذاری می‌شود. آگهی‌های تازه به تلگرام متصل شما ارسال می‌گردد.</p>
+      <div id="filter-list" class="filter-list"></div>
+      <div class="settings">
+        <p id="feed-link" class="meta"></p>
+        <p class="meta"><a href="/app/api">مستندات API</a></p>
+      </div>
+    </section>
+    <section class="panel results-panel">
+      <div class="panel-head">
+        <h2 id="results-title">آگهی‌های اخیر</h2>
+        <span id="results-meta" class="muted"></span>
+      </div>
+      <div id="toast" class="toast" hidden></div>
+      <div id="results" class="results"></div>
+    </section>
+  </main>
+
+  <dialog id="editor">
+    <form id="filter-form" method="dialog">
+      <header>
+        <h2 id="editor-title">فیلتر جدید</h2>
+        <button type="button" class="icon" id="close-editor" aria-label="بستن">×</button>
+      </header>
+      <input type="hidden" name="id">
+      <input type="hidden" name="category" value="light">
+      <label>نام فیلتر
+        <input name="name" required placeholder="مثلاً پراید اصفهان">
+      </label>
+      <div class="field category-picker">
+        <span>دسته‌بندی دیوار</span>
+        <p id="category-selected" class="category-selected">سواری و وانت</p>
+        <input id="category-search" autocomplete="off" placeholder="جستجوی دسته">
+        <div id="category-crumb" class="category-crumb"></div>
+        <div id="category-grid" class="category-grid"></div>
+      </div>
+      <label>عبارت جستجو (اختیاری)
+        <input name="query" placeholder="خالی = همه آگهی‌های این دسته">
+      </label>
+      <div class="field">
+        <span>شهرها</span>
+        <div id="city-chips" class="chips"></div>
+        <input id="city-input" autocomplete="off" placeholder="جستجوی شهر">
+        <div id="city-suggest" class="suggest" hidden></div>
+        <div id="city-popular" class="popular"></div>
+      </div>
+      <div id="divar-fields" class="divar-fields"></div>
+      <div class="field">
+        <span>کلمات حذف از عنوان</span>
+        <div id="exclude-chips" class="chips"></div>
+        <input id="exclude-input" placeholder="کلمه و Enter">
+      </div>
+      <label>مقصد تلگرام (اختیاری)
+        <input name="chat_id" placeholder="خالی = چت شخصی شما · برای کانال: آی‌دی مثل -100…">
+      </label>
+      <p class="hint">برای کانال/گروه: ربات را ادمین کنید، یک پیام در کانال بفرستید، آی‌دی را اینجا بگذارید.</p>
+      <div class="row">
+        <label>تعداد صفحات دیوار
+          <input name="max_pages" type="number" min="1" max="8" value="3">
+        </label>
+        <label class="check end">
+          <input name="enabled" type="checkbox" checked>
+          فعال باشد
+        </label>
+      </div>
+      <footer>
+        <button type="button" id="preview-form-btn" class="ghost">پیش‌نمایش</button>
+        <button type="submit" class="primary">ذخیره فیلتر</button>
+      </footer>
+    </form>
+  </dialog>
+  <script src="/portal.js"></script>
+</body>
+</html>
