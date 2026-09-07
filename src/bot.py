@@ -157,7 +157,7 @@ class TelegramBot:
 
     def _start(self, notifier: TelegramNotifier, chat_id: str, message: dict) -> None:
         user = db.get_user_by_chat_id(chat_id)
-        login_url = f"{public_base_url()}/app/login"
+        login_url = public_base_url()
         if user and user.get("has_password") and user.get("login_username"):
             notifier.send_text(
                 f"حساب شما فعال است.\n"
@@ -215,7 +215,7 @@ class TelegramBot:
                 notifier.send_text(str(exc), chat_id=chat_id)
                 return
             _clear_pending(chat_id)
-            login_url = f"{public_base_url()}/app/login"
+            login_url = public_base_url()
             notifier.send_text(
                 "ثبت‌نام انجام شد.\n\n"
                 f"یوزرنیم: `{user['login_username']}`\n"
@@ -232,7 +232,7 @@ class TelegramBot:
 
     def _send_portal_link(self, notifier: TelegramNotifier, chat_id: str) -> None:
         user = db.get_user_by_chat_id(chat_id)
-        login_url = f"{public_base_url()}/app/login"
+        login_url = public_base_url()
         if not user or not user.get("has_password"):
             notifier.send_text("ابتدا /start بزنید و یوزرنیم/رمز را تنظیم کنید.", chat_id=chat_id)
             return

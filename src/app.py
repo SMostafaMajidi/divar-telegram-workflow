@@ -24,6 +24,7 @@ from config_store import (
     load_dotenv,
     next_slot_at,
     poll_interval_seconds,
+    public_base_url,
     public_settings,
     seconds_until_next_slot,
     update_settings,
@@ -82,12 +83,58 @@ WATCHER = Watcher()
 
 
 class Handler(BaseHTTPRequestHandler):
+    def do_HEAD(self) -> None:
+        self.close_connection = True
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path).rstrip("/") or "/"
+        if path in {
+            "/",
+            "/admin",
+            "/admin/login",
+            "/app",
+            "/app/login",
+            "/app/access",
+            "/app/api",
+            "/styles.css",
+            "/app.js",
+            "/admin.js",
+            "/admin-login.js",
+            "/app-login.js",
+            "/app-api.js",
+            "/portal.js",
+            "/feed.js",
+        } or path.startswith("/u/"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            return
+        if path.startswith("/api/"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.end_headers()
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+        if path != "/" and path.endswith("/"):
+            target = path.rstrip("/") or "/"
+            if parsed.query:
+                target = f"{target}?{parsed.query}"
+            self.send_response(302)
+            self.send_header("Location", target)
+            self.end_headers()
+            return
         query = parse_qs(parsed.query)
         try:
             if path == "/":
+                if self._cookie("session") and db.get_session_user(self._cookie("session")):
+                    self.send_response(302)
+                    self.send_header("Location", "/app")
+                    self.end_headers()
+                    return
                 return self._file(WEB_DIR / "index.html")
             if path == "/admin/login":
                 if self._admin_logged_in():
@@ -106,26 +153,24 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/app":
                 if not self._cookie("session") or not db.get_session_user(self._cookie("session")):
                     self.send_response(302)
-                    self.send_header("Location", "/app/login")
+                    self.send_header("Location", "/")
                     self.end_headers()
                     return
                 return self._file(WEB_DIR / "portal.html")
             if path == "/app/login":
-                if self._cookie("session") and db.get_session_user(self._cookie("session")):
-                    self.send_response(302)
-                    self.send_header("Location", "/app")
-                    self.end_headers()
-                    return
-                return self._file(WEB_DIR / "app-login.html")
+                self.send_response(302)
+                self.send_header("Location", "/")
+                self.end_headers()
+                return
             if path == "/app/access":
                 self.send_response(302)
-                self.send_header("Location", "/app/login")
+                self.send_header("Location", "/")
                 self.end_headers()
                 return
             if path == "/app/api":
                 if not self._cookie("session") or not db.get_session_user(self._cookie("session")):
                     self.send_response(302)
-                    self.send_header("Location", "/app/login")
+                    self.send_header("Location", "/")
                     self.end_headers()
                     return
                 return self._file(WEB_DIR / "app-api.html")
@@ -251,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header(
                     "Set-Cookie",
-                    "admin_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+                    f"admin_session=; Path=/; Max-Age=0; {self._cookie_flags()}",
                 )
                 payload = b'{"ok":true}'
                 self.send_header("Content-Length", str(len(payload)))
@@ -313,7 +358,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/logout":
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Set-Cookie", "session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+                self.send_header("Set-Cookie", f"session=; Path=/; Max-Age=0; {self._cookie_flags()}")
                 payload = b'{"ok":true}'
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
@@ -379,16 +424,22 @@ class Handler(BaseHTTPRequestHandler):
         morsel = cookie.get(name)
         return morsel.value if morsel else ""
 
+    def _cookie_flags(self) -> str:
+        flags = "HttpOnly; SameSite=Lax"
+        if public_base_url().startswith("https://"):
+            flags += "; Secure"
+        return flags
+
     def _set_session_cookie(self, token: str) -> None:
         self.send_header(
             "Set-Cookie",
-            f"session={token}; Path=/; Max-Age={30 * 24 * 3600}; HttpOnly; SameSite=Lax",
+            f"session={token}; Path=/; Max-Age={30 * 24 * 3600}; {self._cookie_flags()}",
         )
 
     def _set_admin_cookie(self, token: str) -> None:
         self.send_header(
             "Set-Cookie",
-            f"admin_session={token}; Path=/; Max-Age={14 * 24 * 3600}; HttpOnly; SameSite=Lax",
+            f"admin_session={token}; Path=/; Max-Age={14 * 24 * 3600}; {self._cookie_flags()}",
         )
 
     def _admin_logged_in(self) -> bool:
@@ -533,8 +584,8 @@ def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
         except Exception as exc:
             print(f"Watcher auto-start skipped: {exc}", flush=True)
     server = ReuseServer((host, port), Handler)
-    print(f"Service: http://127.0.0.1:{port}", flush=True)
-    print(f"Admin:   http://127.0.0.1:{port}/admin", flush=True)
+    print(f"Service: {public_base_url()}/", flush=True)
+    print(f"Admin:   {public_base_url()}/admin", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

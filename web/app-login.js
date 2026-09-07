@@ -33,8 +33,13 @@ fetch("/api/status")
   .then((r) => r.json())
   .then((s) => {
     const el = document.getElementById("bot-hint");
+    if (!el) return;
     if (s.bot_username) {
-      el.innerHTML = `ربات ثبت‌نام: <a href="https://t.me/${s.bot_username}" target="_blank">@${s.bot_username}</a>`;
+      el.innerHTML = `ربات ثبت‌نام: <a href="https://t.me/${s.bot_username}" target="_blank" rel="noopener">@${s.bot_username}</a>`;
+    } else if (s.telegram_ready) {
+      el.textContent = "ربات فعال است؛ لینک عمومی هنوز آماده نیست.";
+    } else {
+      el.textContent = "ربات هنوز پیکربندی نشده است.";
     }
   })
   .catch(() => {});

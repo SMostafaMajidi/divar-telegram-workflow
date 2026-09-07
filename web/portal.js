@@ -82,7 +82,7 @@ async function api(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   if (res.status === 401) {
-    location.href = "/app/login";
+    location.href = "/";
     throw new Error("نیاز به ورود");
   }
   const data = await res.json().catch(() => ({}));
@@ -744,7 +744,7 @@ els.runBtn.addEventListener("click", async () => {
 
 els.logoutBtn?.addEventListener("click", async () => {
   await api("/api/logout", { method: "POST", body: {} });
-  location.href = "/app/login";
+  location.href = "/";
 });
 
 els.categorySearch?.addEventListener("input", () => {
@@ -771,7 +771,7 @@ async function boot() {
     renderStatus();
     await loadFeed();
   } catch (err) {
-    location.replace("/app/login");
+    location.replace("/");
   }
 }
 

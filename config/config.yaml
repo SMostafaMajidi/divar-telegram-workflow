@@ -1,9 +1,9 @@
-# Service-wide settings. Customer filters live in SQLite (data/service.db).
+# Filters can also be edited in the web UI at http://127.0.0.1:8765
 telegram:
   parse_mode: HTML
   send_photos: true
   delay_seconds: 0.8
-poll_interval_minutes: 30
+poll_interval_minutes: 5
 best_count: 5
 send_on_first_run: true
 filters: []

@@ -10,9 +10,8 @@ cp .env.example .env
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-- خانه: http://127.0.0.1:8765/
-- ادمین: http://127.0.0.1:8765/admin/login
-- ورود مشتری: http://127.0.0.1:8765/app/login
+- خانه / ورود مشتری: https://est.rysh.ir/
+- ادمین: https://est.rysh.ir/admin/login
 
 پایش و ربات با بالا آمدن سرویس خودکار شروع می‌شوند.
 
@@ -20,7 +19,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 1. در ربات `/start` بزند.
 2. یوزرنیم و رمز دلخواه پنل را بفرستد.
-3. با همان مشخصات وارد `/app/login` شود و فیلتر بسازد.
+3. با همان مشخصات در صفحه اصلی وارد شود و فیلتر بسازد.
 4. آگهی‌های تازه به چت تلگرام همان کاربر می‌رود.
 
 ## API

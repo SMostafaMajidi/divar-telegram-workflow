@@ -3,44 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>دیوار واچر</title>
+  <title>ورود — دیوار واچر</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-  <header class="topbar">
-    <div>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-card">
       <p class="eyebrow">دیوار واچر</p>
-      <h1>سرویس پایش آگهی</h1>
-    </div>
-    <div class="top-actions">
-      <a class="primary small" href="/admin/login">پنل ادمین</a>
-      <a class="ghost small" href="/app/login">ورود مشتری</a>
-    </div>
-  </header>
-  <main class="layout single">
-    <section class="panel">
-      <h2>شروع کار</h2>
-      <ol class="steps">
-        <li>ربات رسمی را در تلگرام باز کنید و <b>/start</b> بزنید.</li>
-        <li>یوزرنیم و رمز عبور دلخواه برای پنل را تعیین کنید.</li>
-        <li>با همان مشخصات وارد پنل وب شوید و فیلتر بسازید.</li>
-        <li>پایش به‌صورت خودکار آگهی‌های تازه را به چت تلگرام شما می‌فرستد.</li>
-      </ol>
+      <h1>ورود به پنل</h1>
+      <p class="hint">با یوزرنیم و رمزی که در ربات ساخته‌اید وارد شوید.</p>
+      <form id="login-form">
+        <label>یوزرنیم
+          <input name="username" autocomplete="username" required>
+        </label>
+        <label>رمز عبور
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="primary" type="submit">ورود</button>
+      </form>
+      <p id="toast" class="toast" hidden></p>
       <p class="hint" id="bot-hint">در حال خواندن وضعیت سرویس…</p>
+      <ol class="steps login-steps">
+        <li>ربات را در تلگرام باز کنید و <b>/start</b> بزنید.</li>
+        <li>یوزرنیم و رمز دلخواه بسازید.</li>
+        <li>اینجا وارد شوید و فیلتر بسازید.</li>
+      </ol>
     </section>
   </main>
-  <script>
-    fetch("/api/status").then(r => r.json()).then(s => {
-      const el = document.getElementById("bot-hint");
-      if (s.bot_username) {
-        el.innerHTML = `ربات سرویس: <a href="https://t.me/${s.bot_username}" target="_blank">@${s.bot_username}</a>`;
-      } else {
-        el.textContent = "ربات هنوز پیکربندی نشده است.";
-      }
-    }).catch(() => {});
-  </script>
+  <script src="/app-login.js"></script>
 </body>
 </html>

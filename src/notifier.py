@@ -14,7 +14,7 @@ _bot_username_cache: dict[str, str | None] = {}
 
 
 def telegram_bot_username(bot_token: str) -> str | None:
-    if bot_token in _bot_username_cache:
+    if bot_token in _bot_username_cache and _bot_username_cache[bot_token]:
         return _bot_username_cache[bot_token]
     try:
         response = requests.get(
@@ -25,7 +25,8 @@ def telegram_bot_username(bot_token: str) -> str | None:
         username = (data.get("result") or {}).get("username") if data.get("ok") else None
     except requests.RequestException:
         username = None
-    _bot_username_cache[bot_token] = username
+    if username:
+        _bot_username_cache[bot_token] = username
     return username
 
 

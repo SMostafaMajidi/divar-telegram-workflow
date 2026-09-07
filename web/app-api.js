@@ -5,7 +5,7 @@ const toast = document.getElementById("toast");
 fetch("/api/me", { credentials: "same-origin" })
   .then(async (res) => {
     if (res.status === 401) {
-      location.href = "/app/login";
+      location.href = "/";
       return null;
     }
     const data = await res.json();

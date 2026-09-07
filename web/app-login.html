@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ورود مشتری — دیوار واچر</title>
+  <title>ورود — دیوار واچر</title>
+  <meta http-equiv="refresh" content="0; url=/">
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -12,21 +13,10 @@
     <section class="login-card">
       <p class="eyebrow">دیوار واچر</p>
       <h1>ورود به پنل</h1>
-      <p class="hint">اگر هنوز حساب ندارید، در ربات /start بزنید و یوزرنیم و رمز بسازید.</p>
-      <form id="login-form">
-        <label>یوزرنیم
-          <input name="username" autocomplete="username" required>
-        </label>
-        <label>رمز عبور
-          <input name="password" type="password" autocomplete="current-password" required>
-        </label>
-        <button class="primary" type="submit">ورود</button>
-      </form>
-      <p id="toast" class="toast" hidden></p>
-      <p class="hint" id="bot-hint"></p>
-      <p class="meta"><a href="/">بازگشت به خانه</a></p>
+      <p class="hint">در حال انتقال به صفحه ورود…</p>
+      <p class="meta"><a href="/">ادامه</a></p>
     </section>
   </main>
-  <script src="/app-login.js"></script>
+  <script>location.replace("/");</script>
 </body>
 </html>
