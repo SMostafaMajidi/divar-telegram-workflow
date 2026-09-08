@@ -29,19 +29,21 @@
         <button id="toggle-create" class="primary small" type="button">افزودن مشتری</button>
       </div>
 
-      <form id="create-form" class="settings create-box" hidden>
-        <label>یوزرنیم تلگرام
-          <input name="telegram_username" required placeholder="بدون @">
-        </label>
-        <label>نام نمایشی
-          <input name="display_name" placeholder="اختیاری">
-        </label>
-        <label class="check">
-          <input name="ai_enabled" type="checkbox">
-          فعال‌سازی رتبه‌بندی هوشمند
-        </label>
-        <div class="row">
-          <button class="primary small" type="submit">ساخت حساب</button>
+      <form id="create-form" class="create-box" hidden>
+        <div class="create-grid">
+          <label>یوزرنیم تلگرام
+            <input name="telegram_username" required placeholder="بدون @">
+          </label>
+          <label>نام نمایشی
+            <input name="display_name" placeholder="اختیاری">
+          </label>
+        </div>
+        <div class="create-actions">
+          <label class="check">
+            <input name="ai_enabled" type="checkbox">
+            هوش مصنوعی
+          </label>
+          <button class="primary small" type="submit">ساخت</button>
           <button id="cancel-create" class="ghost small" type="button">انصراف</button>
         </div>
       </form>
@@ -50,6 +52,6 @@
     </section>
   </main>
   <script src="/admin-common.js?v=1"></script>
-  <script src="/admin.js?v=4"></script>
+  <script src="/admin.js?v=5"></script>
 </body>
 </html>

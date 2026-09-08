@@ -167,7 +167,46 @@ code { font-size: 12px; background: #f4efe7; padding: 2px 6px; border-radius: 6p
 
 .narrow-panel { max-width: 640px; min-height: auto; }
 .muted-count { color: var(--muted); font-size: 14px; font-weight: 500; }
-.create-box { margin: 0 0 16px; border-top: none; padding-top: 0; }
+.create-box {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: #faf8f4;
+  display: grid;
+  gap: 8px;
+}
+.create-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.create-box label {
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.create-box input[type="text"],
+.create-box input:not([type]),
+.create-box input[type="password"] {
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.create-actions .check {
+  margin-left: auto;
+  font-size: 12px;
+}
+@media (max-width: 720px) {
+  .create-grid { grid-template-columns: 1fr; }
+  .create-actions .check { margin-left: 0; width: 100%; }
+}
 .user-summary-list { display: grid; gap: 8px; }
 .user-summary {
   display: flex;
