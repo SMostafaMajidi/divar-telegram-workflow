@@ -34,6 +34,7 @@ from config_store import (
     user_poll_offset_minutes,
 )
 from runner import get_client, preview_spec, save_user_filter, send_best_for_user, watch_tick
+from plans import has_api_access
 import db
 
 WEB_DIR = ROOT / "web"
@@ -207,9 +208,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             if path == "/app/api":
-                if not self._cookie("session") or not db.get_session_user(self._cookie("session")):
+                user = db.get_session_user(self._cookie("session"))
+                if not user:
                     self.send_response(302)
                     self.send_header("Location", "/")
+                    self.end_headers()
+                    return
+                if not has_api_access(user):
+                    self.send_response(302)
+                    self.send_header("Location", "/pricing")
                     self.end_headers()
                     return
                 return self._file(WEB_DIR / "app-api.html")
@@ -316,6 +323,8 @@ class Handler(BaseHTTPRequestHandler):
                 )
             if path == "/api/v1/listings":
                 user = self._require_api_user()
+                if not has_api_access(user):
+                    raise AppError("API access is available on the Pro plan only.")
                 limit = int((query.get("limit") or ["50"])[0])
                 offset = int((query.get("offset") or ["0"])[0])
                 return self._json(
@@ -708,6 +717,7 @@ def _safe_user(user: dict) -> dict:
         "expires_at": user.get("expires_at") or "",
         "subscription_status": user.get("subscription_status") or "",
         "telegram_chat_id": user.get("telegram_chat_id") or "",
+        "api_access": has_api_access(user),
     }
 
 

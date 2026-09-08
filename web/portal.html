@@ -24,7 +24,7 @@
         <div class="menu-dropdown" hidden role="menu">
           <button id="run-btn" class="menu-item" type="button" role="menuitem" hidden>ارسال بهترین‌ها</button>
           <a class="menu-item" href="/pricing" role="menuitem">پلن‌ها</a>
-          <a class="menu-item" href="/app/api" role="menuitem">مستندات API</a>
+          <a id="api-docs-menu" class="menu-item" href="/app/api" role="menuitem" hidden>مستندات API</a>
           <hr class="menu-sep">
           <button id="logout-btn" class="menu-item danger" type="button" role="menuitem">خروج</button>
         </div>
@@ -54,7 +54,7 @@
 
       <div class="portal-foot">
         <p id="feed-link" class="meta"></p>
-        <p class="meta"><a href="/app/api">مستندات API</a> · <a href="/pricing">پلن‌ها</a></p>
+        <p class="meta"><a id="api-docs-foot" href="/app/api" hidden>مستندات API</a><span id="api-docs-sep" hidden> · </span><a href="/pricing">پلن‌ها</a></p>
       </div>
     </section>
 
@@ -124,6 +124,6 @@
     </form>
   </dialog>
   <script src="/dates.js?v=1"></script>
-  <script src="/portal.js?v=6"></script>
+  <script src="/portal.js?v=7"></script>
 </body>
 </html>

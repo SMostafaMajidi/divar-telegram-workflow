@@ -57,6 +57,9 @@ const els = {
   welcome: $("#welcome"),
   planLine: $("#plan-line"),
   filterQuota: $("#filter-quota"),
+  apiDocsMenu: $("#api-docs-menu"),
+  apiDocsFoot: $("#api-docs-foot"),
+  apiDocsSep: $("#api-docs-sep"),
 };
 
 function el(tag, attrs = {}, children = []) {
@@ -392,6 +395,10 @@ function renderStatus() {
     els.runBtn.hidden = !aiOn;
     els.runBtn.disabled = !aiOn;
   }
+  const apiOn = !!state.user.api_access;
+  if (els.apiDocsMenu) els.apiDocsMenu.hidden = !apiOn;
+  if (els.apiDocsFoot) els.apiDocsFoot.hidden = !apiOn;
+  if (els.apiDocsSep) els.apiDocsSep.hidden = !apiOn;
   if (els.feedLink) {
     const slug = state.user.public_slug || state.user.login_username || state.user.telegram_username;
     els.feedLink.innerHTML = `صفحه اختصاصی: <a href="/u/${slug}" target="_blank">/u/${slug}</a>`;

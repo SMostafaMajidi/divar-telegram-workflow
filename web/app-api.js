@@ -14,6 +14,10 @@ fetch("/api/me", { credentials: "same-origin" })
   })
   .then((user) => {
     if (!user) return;
+    if (!user.api_access) {
+      location.replace("/pricing");
+      return;
+    }
     const userName = user.login_username || "USERNAME";
     sample.textContent = [
       "curl -u '" + userName + ":YOUR_PASSWORD' \\",

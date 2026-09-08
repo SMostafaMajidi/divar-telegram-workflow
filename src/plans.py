@@ -15,6 +15,7 @@ PLANS: dict[str, dict[str, Any]] = {
         "ai_enabled": False,
         "duration_days": 7,
         "features": ["۱ فیلتر فعال", "پایش هر ۵ دقیقه", "ارسال به تلگرام"],
+        "api_access": False,
     },
     "basic": {
         "id": "basic",
@@ -26,6 +27,7 @@ PLANS: dict[str, dict[str, Any]] = {
         "ai_enabled": False,
         "duration_days": 30,
         "features": ["۳ فیلتر فعال", "پایش هر ۵ دقیقه", "مقصد چت جدا برای هر فیلتر"],
+        "api_access": False,
     },
     "pro": {
         "id": "pro",
@@ -40,8 +42,10 @@ PLANS: dict[str, dict[str, Any]] = {
             "۱۰ فیلتر فعال",
             "پایش هر ۳ دقیقه",
             "رتبه‌بندی هوشمند",
+            "دسترسی API",
             "اولویت پشتیبانی",
         ],
+        "api_access": True,
     },
 }
 
@@ -99,3 +103,10 @@ def plan_expiry_iso(plan_id: str, *, from_when: datetime | None = None) -> str:
     base = from_when or datetime.now(timezone.utc)
     days = max(1, int(plan.get("duration_days") or 30))
     return (base + timedelta(days=days)).isoformat()
+
+
+def has_api_access(user: dict[str, Any] | None) -> bool:
+    if not user or not subscription_ok(user):
+        return False
+    plan = get_plan(user.get("plan_id"))
+    return bool(plan.get("api_access"))
