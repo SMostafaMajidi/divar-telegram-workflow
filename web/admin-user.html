@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>مشتری — ادمین</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark4">
+  <link rel="stylesheet" href="/styles.css?v=dark5">
 </head>
 <body>
   <header class="topbar">
@@ -28,103 +28,113 @@
       </div>
     </div>
   </header>
+
   <main class="layout single">
-    <section class="panel narrow-panel">
+    <section class="panel user-admin-panel">
       <p id="toast" class="toast" hidden></p>
-      <div id="user-head" class="user-detail-head"></div>
 
-      <form id="profile-form" class="settings">
-        <h3>اطلاعات حساب</h3>
+      <div id="user-head" class="user-hero"></div>
+
+      <nav class="seg-tabs" id="user-tabs" aria-label="بخش‌های مشتری">
+        <button type="button" class="seg-tab active" data-tab="account">حساب</button>
+        <button type="button" class="seg-tab" data-tab="plan">اشتراک</button>
+        <button type="button" class="seg-tab" data-tab="poll">پایش</button>
+        <button type="button" class="seg-tab" data-tab="routes">فیلترها</button>
+        <button type="button" class="seg-tab" data-tab="more">بیشتر</button>
+      </nav>
+
+      <form id="profile-form" class="tab-panel settings-clean" data-panel="account">
+        <p class="panel-lead">نام و وضعیت حساب</p>
         <label>نام نمایشی
-          <input name="display_name" type="text">
+          <input name="display_name" type="text" placeholder="اختیاری">
         </label>
-        <label class="check">
-          <input name="ai_enabled" type="checkbox">
-          رتبه‌بندی هوشمند
-        </label>
-        <label class="check">
-          <input name="active" type="checkbox">
-          حساب فعال
-        </label>
-        <button class="primary small" type="submit">ذخیره اطلاعات</button>
-      </form>
-
-      <form id="plan-form" class="settings">
-        <h3>اشتراک و پلن</h3>
-        <p id="plan-status" class="meta"></p>
-        <label>پلن
-          <select name="plan_id" id="plan-id"></select>
-        </label>
-        <label>سقف فیلتر (خالی = از پلن)
-          <input name="max_filters" type="number" min="0" max="100" placeholder="مثلاً ۳">
-        </label>
-        <label>تاریخ انقضا (شمسی)
-          <input name="expires_at" type="text" inputmode="numeric" placeholder="مثلاً ۱۴۰۴/۱۲/۲۹" autocomplete="off">
-        </label>
-        <p class="hint">فرمت: سال/ماه/روز شمسی — مثلاً ۱۴۰۴/۰۶/۱۷</p>
-        <label class="check">
-          <input name="apply_limits" type="checkbox" checked>
-          با اعمال پلن، سقف/فاصله/AI هم ست شود
-        </label>
-        <label class="check">
-          <input name="renew" type="checkbox" checked>
-          انقضا را از امروز/انقضای فعلی تمدید کن
-        </label>
-        <div class="row">
-          <button class="primary small" type="submit">اعمال پلن</button>
-          <button id="save-expiry-btn" class="ghost small" type="button">فقط ذخیره سقف/انقضا</button>
+        <div class="toggle-row">
+          <label class="check">
+            <input name="active" type="checkbox">
+            حساب فعال
+          </label>
+          <label class="check">
+            <input name="ai_enabled" type="checkbox">
+            رتبه‌بندی هوشمند
+          </label>
         </div>
+        <button class="primary small" type="submit">ذخیره</button>
       </form>
 
-      <form id="poll-form" class="settings">
-        <h3>تنظیم پایش</h3>
-        <label>فاصله پایش (دقیقه)
-          <input name="poll_interval_minutes" type="number" min="1" step="1">
-        </label>
-        <label>زمان پایه / آفست (دقیقه)
-          <input name="poll_offset_minutes" type="number" min="0" step="1">
-        </label>
-        <label>تعداد آگهی برتر
-          <input name="best_count" type="number" min="1" max="10" step="1">
-        </label>
+      <form id="plan-form" class="tab-panel settings-clean" data-panel="plan" hidden>
+        <p class="panel-lead">پلن، سقف فیلتر و تاریخ انقضا</p>
+        <p id="plan-status" class="status-line"></p>
+        <div class="field-grid">
+          <label>پلن
+            <select name="plan_id" id="plan-id"></select>
+          </label>
+          <label>سقف فیلتر
+            <input name="max_filters" type="number" min="0" max="100" placeholder="از پلن">
+          </label>
+          <label class="span-2">انقضا (شمسی)
+            <input name="expires_at" type="text" inputmode="numeric" placeholder="مثلاً ۱۴۰۴/۱۲/۲۹" autocomplete="off">
+          </label>
+        </div>
+        <div class="toggle-row quiet">
+          <label class="check">
+            <input name="renew" type="checkbox" checked>
+            تمدید خودکار از امروز/انقضا
+          </label>
+          <label class="check">
+            <input name="apply_limits" type="checkbox" checked>
+            هم‌تراز کردن با پلن
+          </label>
+        </div>
+        <button class="primary small" type="submit">ذخیره اشتراک</button>
+      </form>
+
+      <form id="poll-form" class="tab-panel settings-clean" data-panel="poll" hidden>
+        <p class="panel-lead">زمان‌بندی پایش این مشتری</p>
+        <div class="field-grid">
+          <label>فاصله (دقیقه)
+            <input name="poll_interval_minutes" type="number" min="1" step="1">
+          </label>
+          <label>آفست (دقیقه)
+            <input name="poll_offset_minutes" type="number" min="0" step="1">
+          </label>
+          <label>آگهی برتر
+            <input name="best_count" type="number" min="1" max="10" step="1">
+          </label>
+        </div>
         <p id="slot-hint" class="slot-hint"></p>
         <button class="primary small" type="submit">ذخیره پایش</button>
       </form>
 
-      <form id="route-form" class="settings">
-        <h3>اتصال فیلتر به چت</h3>
-        <p class="meta">برای دیدن گروه/کانال در لیست، ربات را آنجا عضو کنید و یک پیام بفرستید.</p>
-        <label>فیلتر
-          <select name="filter_id" id="route-filter"></select>
-        </label>
-        <label>چت مقصد
-          <select name="chat_id" id="route-chat"></select>
-        </label>
-        <div class="row">
-          <button class="primary small" type="submit">ذخیره مقصد</button>
-          <button id="refresh-chats-btn" class="ghost small" type="button">تازه‌سازی چت‌ها</button>
+      <div id="routes-panel" class="tab-panel settings-clean" data-panel="routes" hidden>
+        <div class="panel-head tight">
+          <div>
+            <p class="panel-lead" style="margin:0">مقصد تلگرام هر فیلتر</p>
+            <p class="meta" style="margin:4px 0 0">ربات را در گروه/کانال ادمین کنید و یک پیام بفرستید.</p>
+          </div>
+          <button id="refresh-chats-btn" class="ghost small" type="button">تازه‌سازی</button>
         </div>
         <div id="route-list" class="route-list"></div>
-      </form>
-
-      <div class="settings">
-        <h3>ابزارها</h3>
-        <div class="row">
-          <button id="rotate-btn" class="ghost small" type="button">کلید API جدید</button>
-          <a id="feed-link" class="ghost small" href="#" target="_blank">فید عمومی</a>
-        </div>
-        <p id="api-key" class="meta mono"></p>
       </div>
 
-      <div class="settings danger-zone">
-        <h3>حذف مشتری</h3>
-        <p class="meta">فیلترها، نشست‌ها و آگهی‌های کش‌شده این حساب پاک می‌شوند.</p>
-        <button id="delete-btn" class="danger small" type="button">حذف کامل حساب</button>
+      <div id="more-panel" class="tab-panel settings-clean" data-panel="more" hidden>
+        <p class="panel-lead">ابزارها و حذف</p>
+        <div class="tool-block">
+          <div class="row">
+            <button id="rotate-btn" class="ghost small" type="button">کلید API جدید</button>
+            <a id="feed-link" class="ghost small" href="#" target="_blank">فید عمومی</a>
+          </div>
+          <p id="api-key" class="meta mono"></p>
+        </div>
+        <div class="danger-zone compact">
+          <p class="meta">حذف کامل حساب، فیلترها و داده‌های این مشتری.</p>
+          <button id="delete-btn" class="danger small" type="button">حذف حساب</button>
+        </div>
       </div>
     </section>
   </main>
+
   <script src="/dates.js?v=1"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin-user.js?v=6"></script>
+  <script src="/admin-user.js?v=7"></script>
 </body>
 </html>

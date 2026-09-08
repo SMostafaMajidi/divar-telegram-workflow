@@ -4,15 +4,13 @@ const userId = location.pathname.split("/").filter(Boolean).pop();
 const els = {
   title: $("#page-title"),
   head: $("#user-head"),
+  tabs: $("#user-tabs"),
   profile: $("#profile-form"),
   plan: $("#plan-form"),
   planStatus: $("#plan-status"),
   planId: $("#plan-id"),
-  saveExpiry: $("#save-expiry-btn"),
   poll: $("#poll-form"),
-  route: $("#route-form"),
-  routeFilter: $("#route-filter"),
-  routeChat: $("#route-chat"),
+  routesPanel: $("#routes-panel"),
   routeList: $("#route-list"),
   refreshChats: $("#refresh-chats-btn"),
   slotHint: $("#slot-hint"),
@@ -35,7 +33,6 @@ function parseExpiryInput(value) {
   try {
     return fromJalaliInput(raw);
   } catch (err) {
-    // Fall back if someone pastes a gregorian ISO / YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
       return raw.includes("T") ? raw : `${raw}T23:59:59+03:30`;
     }
@@ -68,38 +65,70 @@ function fillSelect(select, items, { valueKey = "id", labelFn, emptyLabel, selec
   select.value = selectedValue;
 }
 
-function chatNameFor(chatId) {
-  const privateId = state.user?.telegram_chat_id || "";
-  if (!chatId || (privateId && String(chatId) === String(privateId))) return "چت شخصی (پیش‌فرض)";
-  const found = state.chats.find((c) => String(c.id) === String(chatId));
-  return found ? chatLabel(found) : chatId;
+function setTab(name) {
+  const tab = name || "account";
+  els.tabs.querySelectorAll(".seg-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  });
+  document.querySelectorAll("[data-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== tab;
+  });
+  try {
+    history.replaceState(null, "", `#${tab}`);
+  } catch (_) {
+    /* ignore */
+  }
 }
 
 function renderRoutes() {
   const privateId = state.user?.telegram_chat_id || "";
-  fillSelect(els.routeFilter, state.filters, {
-    emptyLabel: state.filters.length ? "انتخاب فیلتر" : "فیلتری نیست",
-    labelFn: (f) => f.name || f.id,
-  });
-  fillSelect(els.routeChat, state.chats, {
-    emptyLabel: "چت شخصی (پیش‌فرض)",
-    labelFn: chatLabel,
-    skipIds: [privateId],
-  });
   els.routeList.replaceChildren();
   if (!state.filters.length) {
     els.routeList.append(
       Object.assign(document.createElement("p"), {
-        className: "meta",
+        className: "empty",
         textContent: "هنوز فیلتری برای این مشتری نیست.",
       }),
     );
     return;
   }
   for (const filter of state.filters) {
-    const row = document.createElement("div");
-    row.className = "route-row";
-    row.innerHTML = `<strong>${filter.name || filter.id}</strong><span>${chatNameFor(filter.chat_id)}</span>`;
+    const select = document.createElement("select");
+    fillSelect(select, state.chats, {
+      emptyLabel: "چت شخصی (پیش‌فرض)",
+      labelFn: chatLabel,
+      skipIds: [privateId],
+      selected:
+        filter.chat_id && privateId && String(filter.chat_id) === String(privateId)
+          ? ""
+          : filter.chat_id || "",
+    });
+    select.addEventListener("change", async () => {
+      try {
+        const data = await api(`/api/admin/users/${userId}/filters/${filter.id}/chat`, {
+          method: "POST",
+          body: { chat_id: select.value || "" },
+        });
+        const i = state.filters.findIndex((f) => f.id === data.filter.id);
+        if (i >= 0) state.filters[i] = data.filter;
+        toast("مقصد ذخیره شد", "ok");
+      } catch (err) {
+        toast(err.message, "err");
+        renderRoutes();
+      }
+    });
+
+    const row = document.createElement("article");
+    row.className = "route-card";
+    const title = document.createElement("strong");
+    title.textContent = filter.name || filter.id;
+    const meta = document.createElement("p");
+    meta.className = "meta";
+    meta.textContent = filter.enabled ? "فعال" : "غیرفعال";
+    const label = document.createElement("label");
+    label.className = "chat-target";
+    label.append("ارسال به", select);
+    row.append(title, meta, label);
     els.routeList.append(row);
   }
 }
@@ -110,22 +139,34 @@ function render() {
   const handle = user.login_username || user.telegram_username || user.id;
   els.title.textContent = `@${handle}`;
   document.title = `@${handle} — ادمین`;
+
+  const filterCount = user.filter_count || state.filters.length || 0;
+  const exp = user.expires_at ? formatJalali(user.expires_at) : "—";
   els.head.innerHTML = `
-    <div class="card-top">
+    <div class="user-hero-main">
       <div>
-        <p class="meta">${user.display_name || ""} · تلگرام: @${user.telegram_username || "—"}</p>
-        <p class="meta">${user.filter_count || state.filters.length || 0} فیلتر · ساخته‌شده: ${formatJalali(user.created_at)}</p>
+        <p class="eyebrow">مشتری</p>
+        <h2>@${handle}</h2>
+        <p class="meta">${user.display_name || "بدون نام نمایشی"} · تلگرام @${user.telegram_username || "—"}</p>
       </div>
-      <div class="row">
+      <div class="user-hero-pills">
         <span class="pill ${user.linked ? "ok" : "warn"}">${user.linked ? "متصل" : "منتظر ربات"}</span>
         <span class="pill ${user.active ? "ok" : ""}">${user.active ? "فعال" : "غیرفعال"}</span>
-        <span class="pill ${user.subscription_status === "expired" ? "warn" : "ok"}">${user.plan_name || user.plan_id || "—"} · ${user.subscription_status || "—"}</span>
+        <span class="pill ${user.subscription_status === "expired" ? "warn" : "ok"}">${user.plan_name || user.plan_id || "—"}</span>
       </div>
     </div>
+    <dl class="user-hero-stats">
+      <div><dt>فیلتر</dt><dd>${filterCount}</dd></div>
+      <div><dt>سقف</dt><dd>${user.effective_max_filters ?? "—"}</dd></div>
+      <div><dt>انقضا</dt><dd>${exp}</dd></div>
+      <div><dt>عضویت</dt><dd>${formatJalali(user.created_at)}</dd></div>
+    </dl>
   `;
+
   els.profile.display_name.value = user.display_name || "";
   els.profile.ai_enabled.checked = !!user.ai_enabled;
   els.profile.active.checked = !!user.active;
+
   if (els.plan) {
     fillSelect(els.planId, state.plans, {
       labelFn: (p) => `${p.name} — تا ${p.max_filters} فیلتر`,
@@ -134,16 +175,17 @@ function render() {
     els.plan.max_filters.value = user.max_filters ?? "";
     els.plan.expires_at.value = toJalaliInput(user.expires_at);
     els.planStatus.textContent =
-      `وضعیت: ${user.subscription_status || "—"} · سقف مؤثر: ${user.effective_max_filters ?? "—"} فیلتر` +
-      (user.expires_at ? ` · انقضا: ${formatJalali(user.expires_at)}` : "");
+      `${user.subscription_status || "—"} · سقف مؤثر ${user.effective_max_filters ?? "—"}` +
+      (user.expires_at ? ` · تا ${formatJalali(user.expires_at)}` : "");
   }
+
   els.poll.poll_interval_minutes.value =
     user.poll_interval_minutes ?? user.effective_poll_interval_minutes ?? 5;
   els.poll.poll_offset_minutes.value = user.poll_offset_minutes ?? user.effective_poll_offset_minutes ?? 0;
   els.poll.best_count.value = user.best_count ?? user.effective_best_count ?? 5;
   els.slotHint.textContent = slotHint(user);
   els.feed.href = `/u/${user.public_slug || user.login_username || user.telegram_username}`;
-  els.apiKey.textContent = user.api_key ? `API key: ${user.api_key}` : "";
+  els.apiKey.textContent = user.api_key ? `API key: ${user.api_key}` : "کلید API هنوز ساخته نشده.";
   renderRoutes();
 }
 
@@ -156,6 +198,12 @@ async function loadRoutes() {
   state.chats = chats.chats || [];
   renderRoutes();
 }
+
+els.tabs?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".seg-tab");
+  if (!btn) return;
+  setTab(btn.dataset.tab);
+});
 
 els.profile.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -170,7 +218,7 @@ els.profile.addEventListener("submit", async (e) => {
     });
     state.user = data.user;
     render();
-    toast("اطلاعات ذخیره شد", "ok");
+    toast("حساب ذخیره شد", "ok");
   } catch (err) {
     toast(err.message, "err");
   }
@@ -180,39 +228,32 @@ if (els.plan) {
   els.plan.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      const data = await api(`/api/admin/users/${userId}`, {
-        method: "PUT",
-        body: {
-          apply_plan: true,
-          plan_id: els.planId.value || "trial",
-          renew: els.plan.renew.checked,
-          apply_limits: els.plan.apply_limits.checked,
-          expires_at: els.plan.renew.checked ? undefined : parseExpiryInput(els.plan.expires_at.value),
-        },
-      });
-      state.user = data.user;
+      const renew = els.plan.renew.checked;
+      const body = {
+        apply_plan: true,
+        plan_id: els.planId.value || "trial",
+        renew,
+        apply_limits: els.plan.apply_limits.checked,
+        max_filters: optionalNumber(els.plan.max_filters.value),
+      };
+      if (!renew) body.expires_at = parseExpiryInput(els.plan.expires_at.value);
+      const data = await api(`/api/admin/users/${userId}`, { method: "PUT", body });
+      // Keep max_filters override if set after plan apply
+      if (body.max_filters != null) {
+        const again = await api(`/api/admin/users/${userId}`, {
+          method: "PUT",
+          body: { max_filters: body.max_filters },
+        });
+        state.user = again.user;
+      } else {
+        state.user = data.user;
+      }
       render();
-      toast("پلن اعمال شد", "ok");
+      toast("اشتراک ذخیره شد", "ok");
     } catch (err) {
       toast(err.message, "err");
     }
   });
-  els.saveExpiry.onclick = async () => {
-    try {
-      const data = await api(`/api/admin/users/${userId}`, {
-        method: "PUT",
-        body: {
-          max_filters: optionalNumber(els.plan.max_filters.value),
-          expires_at: parseExpiryInput(els.plan.expires_at.value),
-        },
-      });
-      state.user = data.user;
-      render();
-      toast("سقف/انقضا ذخیره شد", "ok");
-    } catch (err) {
-      toast(err.message, "err");
-    }
-  };
 }
 
 els.poll.addEventListener("submit", async (e) => {
@@ -225,7 +266,7 @@ els.poll.addEventListener("submit", async (e) => {
     return;
   }
   if (offset == null || offset < 0) {
-    toast("زمان پایه نامعتبر است", "err");
+    toast("آفست نامعتبر است", "err");
     return;
   }
   if (best == null || best < 1) {
@@ -249,46 +290,10 @@ els.poll.addEventListener("submit", async (e) => {
   }
 });
 
-els.route.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const filterId = els.routeFilter.value;
-  if (!filterId) {
-    toast("یک فیلتر انتخاب کنید", "err");
-    return;
-  }
-  try {
-    const data = await api(`/api/admin/users/${userId}/filters/${filterId}/chat`, {
-      method: "POST",
-      body: { chat_id: els.routeChat.value || "" },
-    });
-    const i = state.filters.findIndex((f) => f.id === data.filter.id);
-    if (i >= 0) state.filters[i] = data.filter;
-    renderRoutes();
-    toast("مقصد فیلتر ذخیره شد", "ok");
-  } catch (err) {
-    toast(err.message, "err");
-  }
-});
-
-els.routeFilter.addEventListener("change", () => {
-  const filter = state.filters.find((f) => f.id === els.routeFilter.value);
-  const privateId = state.user?.telegram_chat_id || "";
-  const selected =
-    filter?.chat_id && privateId && String(filter.chat_id) === String(privateId)
-      ? ""
-      : filter?.chat_id || "";
-  fillSelect(els.routeChat, state.chats, {
-    emptyLabel: "چت شخصی (پیش‌فرض)",
-    labelFn: chatLabel,
-    skipIds: [privateId],
-    selected,
-  });
-});
-
 els.refreshChats.onclick = async () => {
   try {
     await loadRoutes();
-    toast(state.chats.length ? `${state.chats.length} چت` : "چتی ثبت نشده؛ در ربات/گروه پیام بفرستید", "ok");
+    toast(state.chats.length ? `${state.chats.length} چت` : "چتی نیست؛ در ربات/گروه پیام بفرستید", "ok");
   } catch (err) {
     toast(err.message, "err");
   }
@@ -323,6 +328,8 @@ els.deleteBtn.onclick = async () => {
 
 async function boot() {
   bindLogout();
+  const initial = (location.hash || "").replace("#", "") || "account";
+  setTab(["account", "plan", "poll", "routes", "more"].includes(initial) ? initial : "account");
   if (!userId) {
     toast("شناسه مشتری نامعتبر است", "err");
     return;
