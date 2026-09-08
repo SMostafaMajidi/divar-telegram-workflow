@@ -125,6 +125,7 @@ class Handler(BaseHTTPRequestHandler):
             "/app-api.js",
             "/portal.js",
             "/feed.js",
+            "/dates.js",
         } or path.startswith("/u/") or path.startswith("/admin/users/"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -237,6 +238,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/app-api.js",
                 "/portal.js",
                 "/feed.js",
+                "/dates.js",
             }:
                 return self._file(WEB_DIR / path.lstrip("/"))
 
