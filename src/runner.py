@@ -13,7 +13,8 @@ from config_store import (
     filter_to_api,
     load_config,
     load_dotenv,
-    poll_interval_seconds,
+    user_best_count,
+    user_poll_interval_minutes,
 )
 from divar import DivarClient, Listing
 from notifier import TelegramNotifier
@@ -86,11 +87,8 @@ def preview_spec(body: dict[str, Any], limit: int = 24) -> dict[str, Any]:
     }
 
 
-def best_count(config: dict[str, Any] | None = None) -> int:
-    config = config or load_config()
-    if config.get("best_count") is not None:
-        return max(1, min(int(config["best_count"]), 10))
-    return max(1, min(int(config.get("max_send_per_run") or 5), 10))
+def best_count(config: dict[str, Any] | None = None, user: dict[str, Any] | None = None) -> int:
+    return user_best_count(user, config)
 
 
 def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[str, Any]:
@@ -101,7 +99,7 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
         raise AppError("No enabled filters to run.")
     config = load_config()
     listings = collect_listings(specs)
-    wanted = count if count is not None else best_count(config)
+    wanted = count if count is not None else best_count(config, user)
     chosen, source = pick_best_ai(listings, wanted)
     notifier = build_notifier(config)
     chat_id = destination_chat_id(user)
@@ -130,9 +128,12 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
     }
 
 
-def watch_tick() -> dict[str, Any]:
+def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
     config = load_config()
     bundles = db.active_users_with_filters()
+    if user_ids is not None:
+        wanted = set(user_ids)
+        bundles = [bundle for bundle in bundles if bundle["user"]["id"] in wanted]
     if not bundles:
         return {
             "sent": 0,
@@ -141,13 +142,13 @@ def watch_tick() -> dict[str, Any]:
             "message": "No active linked users with filters.",
             "users": 0,
         }
-    max_age = max(1, poll_interval_seconds(config) // 60)
     notifier = build_notifier(config)
     sent = 0
     found = 0
     newest_count = 0
     for bundle in bundles:
         user = bundle["user"]
+        max_age = user_poll_interval_minutes(user, config)
         for spec in bundle["filters"]:
             listings = collect_listings([spec])
             found += len(listings)
@@ -178,7 +179,7 @@ def watch_tick() -> dict[str, Any]:
         "message": (
             f"Sent {sent} listings."
             if sent
-            else f"No new listings in the last {max_age} min."
+            else f"No new listings for {len(bundles)} due user(s)."
         ),
     }
 

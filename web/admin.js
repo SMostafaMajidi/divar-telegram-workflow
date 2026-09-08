@@ -34,6 +34,19 @@ async function api(path, options = {}) {
   return data;
 }
 
+function optionalNumber(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function slotHint(user) {
+  const slots = user.slot_preview || [];
+  if (!slots.length) return "";
+  return `اسلات‌ها در ساعت: ${slots.join("، ")}، …`;
+}
+
 function renderUsers() {
   els.list.replaceChildren();
   if (!state.users.length) {
@@ -43,12 +56,26 @@ function renderUsers() {
   for (const user of state.users) {
     const card = document.createElement("article");
     card.className = `card ${user.active ? "" : "off"}`;
+    const defaultInterval = user.default_poll_interval_minutes || state.status.poll_interval_minutes || 5;
+    const defaultBest = user.default_best_count || state.status.best_count || 5;
     card.innerHTML = `
       <div class="card-top">
         <h3>@${user.login_username || user.telegram_username}</h3>
         <span class="pill ${user.linked ? "ok" : "warn"}">${user.linked ? "متصل" : "منتظر ربات"}</span>
       </div>
       <p class="meta">${user.display_name || ""} · تلگرام: @${user.telegram_username || "—"}</p>
+      <div class="user-poll">
+        <label>فاصله پایش (دقیقه)
+          <input data-field="poll_interval_minutes" type="number" min="1" placeholder="پیش‌فرض ${defaultInterval}" value="${user.poll_interval_minutes ?? ""}">
+        </label>
+        <label>زمان پایه (دقیقه)
+          <input data-field="poll_offset_minutes" type="number" min="0" placeholder="مثلاً ۰ یا ۲" value="${user.poll_offset_minutes ?? 0}">
+        </label>
+        <label>تعداد آگهی برتر
+          <input data-field="best_count" type="number" min="1" max="10" placeholder="پیش‌فرض ${defaultBest}" value="${user.best_count ?? ""}">
+        </label>
+      </div>
+      <p class="slot-hint">${slotHint(user)}</p>
       <div class="card-actions"></div>
     `;
     const actions = card.querySelector(".card-actions");
@@ -76,6 +103,29 @@ function renderUsers() {
         toast(err.message, "err");
       }
     };
+    const savePoll = document.createElement("button");
+    savePoll.className = "primary small";
+    savePoll.type = "button";
+    savePoll.textContent = "ذخیره پایش";
+    savePoll.onclick = async () => {
+      const intervalInput = card.querySelector('[data-field="poll_interval_minutes"]');
+      const offsetInput = card.querySelector('[data-field="poll_offset_minutes"]');
+      const bestInput = card.querySelector('[data-field="best_count"]');
+      try {
+        const data = await api(`/api/admin/users/${user.id}`, {
+          method: "PUT",
+          body: {
+            poll_interval_minutes: optionalNumber(intervalInput.value),
+            poll_offset_minutes: optionalNumber(offsetInput.value) ?? 0,
+            best_count: optionalNumber(bestInput.value),
+          },
+        });
+        replaceUser(data.user);
+        toast("تنظیمات پایش ذخیره شد", "ok");
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    };
     const rotate = document.createElement("button");
     rotate.className = "ghost small";
     rotate.type = "button";
@@ -94,7 +144,7 @@ function renderUsers() {
     feed.href = `/u/${user.public_slug || user.login_username || user.telegram_username}`;
     feed.target = "_blank";
     feed.textContent = "فید عمومی";
-    actions.append(ai, active, rotate, feed);
+    actions.append(ai, active, savePoll, rotate, feed);
     els.list.append(card);
   }
 }

@@ -106,6 +106,14 @@ def init_db(path: Path = DB_PATH) -> None:
                 conn.execute("ALTER TABLE users ADD COLUMN login_username TEXT")
             if "password_hash" not in cols:
                 conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+            if "poll_interval_minutes" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN poll_interval_minutes INTEGER")
+            if "poll_offset_minutes" not in cols:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN poll_offset_minutes INTEGER NOT NULL DEFAULT 0"
+                )
+            if "best_count" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN best_count INTEGER")
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_login ON users(login_username) "
                 "WHERE login_username IS NOT NULL AND login_username != ''"
@@ -160,9 +168,32 @@ def new_api_key() -> str:
     return "dw_" + secrets.token_urlsafe(24)
 
 
+def _clamp_poll_interval(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    return max(1, min(int(value), 24 * 60))
+
+
+def _clamp_poll_offset(value: Any, interval: int | None = None) -> int:
+    if value is None or value == "":
+        return 0
+    offset = max(0, int(value))
+    if interval is not None and interval > 0:
+        return offset % interval
+    return offset
+
+
+def _clamp_best_count(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    return max(1, min(int(value), 10))
+
+
 def _user_public(row: dict[str, Any]) -> dict[str, Any]:
     login = (row.get("login_username") or "").strip()
     tg = row.get("telegram_username") or ""
+    interval = _clamp_poll_interval(row.get("poll_interval_minutes"))
+    offset = _clamp_poll_offset(row.get("poll_offset_minutes"), interval)
     return {
         "id": row["id"],
         "telegram_username": tg,
@@ -176,6 +207,9 @@ def _user_public(row: dict[str, Any]) -> dict[str, Any]:
         "linked": bool(row.get("telegram_chat_id")),
         "has_password": bool(row.get("password_hash")),
         "public_slug": login or tg,
+        "poll_interval_minutes": interval,
+        "poll_offset_minutes": offset,
+        "best_count": _clamp_best_count(row.get("best_count")),
     }
 
 
@@ -446,6 +480,27 @@ def update_user(user_id: str, **fields: Any) -> dict[str, Any]:
         fields["password_hash"] = hash_password(str(fields.pop("password")))
     if fields.get("login_username"):
         fields["login_username"] = normalize_login_username(str(fields["login_username"]))
+    if "poll_interval_minutes" in fields:
+        fields["poll_interval_minutes"] = _clamp_poll_interval(fields["poll_interval_minutes"])
+    if "best_count" in fields:
+        fields["best_count"] = _clamp_best_count(fields["best_count"])
+    if "poll_offset_minutes" in fields or "poll_interval_minutes" in fields:
+        from config_store import poll_interval_minutes as default_poll_interval_minutes
+
+        current = get_user(user_id)
+        interval = fields.get("poll_interval_minutes") if "poll_interval_minutes" in fields else None
+        if interval is None and current:
+            interval = current.get("poll_interval_minutes")
+        if interval is None:
+            interval = default_poll_interval_minutes()
+        if "poll_offset_minutes" in fields:
+            fields["poll_offset_minutes"] = _clamp_poll_offset(
+                fields["poll_offset_minutes"], interval
+            )
+        elif current is not None:
+            fields["poll_offset_minutes"] = _clamp_poll_offset(
+                current.get("poll_offset_minutes"), interval
+            )
     allowed = {
         "display_name",
         "ai_enabled",
@@ -453,6 +508,9 @@ def update_user(user_id: str, **fields: Any) -> dict[str, Any]:
         "telegram_chat_id",
         "login_username",
         "password_hash",
+        "poll_interval_minutes",
+        "poll_offset_minutes",
+        "best_count",
     }
     updates: list[str] = []
     values: list[Any] = []

@@ -293,17 +293,45 @@ def poll_interval_seconds(config: dict[str, Any] | None = None) -> int:
     return 180
 
 
+def poll_interval_minutes(config: dict[str, Any] | None = None) -> int:
+    return max(1, poll_interval_seconds(config) // 60)
+
+
+def user_poll_interval_minutes(user: dict[str, Any] | None = None, config: dict[str, Any] | None = None) -> int:
+    config = config or load_config()
+    if user and user.get("poll_interval_minutes") is not None:
+        return max(1, int(user["poll_interval_minutes"]))
+    return poll_interval_minutes(config)
+
+
+def user_poll_offset_minutes(user: dict[str, Any] | None = None, config: dict[str, Any] | None = None) -> int:
+    interval = user_poll_interval_minutes(user, config)
+    raw = int((user or {}).get("poll_offset_minutes") or 0)
+    return max(0, raw) % interval
+
+
+def user_best_count(user: dict[str, Any] | None = None, config: dict[str, Any] | None = None) -> int:
+    config = config or load_config()
+    if user and user.get("best_count") is not None:
+        return max(1, min(int(user["best_count"]), 10))
+    if config.get("best_count") is not None:
+        return max(1, min(int(config["best_count"]), 10))
+    return max(1, min(int(config.get("max_send_per_run") or 5), 10))
+
+
 def seconds_until_next_slot(
     interval_seconds: int | None = None,
     *,
+    offset_seconds: int = 0,
     now: datetime | None = None,
     include_now: bool = False,
 ) -> float:
     interval = max(1, int(interval_seconds if interval_seconds is not None else poll_interval_seconds()))
+    offset = int(offset_seconds) % interval
     current = now.astimezone(APP_TZ) if now else datetime.now(APP_TZ)
     midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
     elapsed = (current - midnight).total_seconds()
-    remainder = elapsed % interval
+    remainder = (elapsed - offset) % interval
     if include_now and remainder < 1:
         return 0.0
     if remainder < 1e-6:
@@ -314,11 +342,17 @@ def seconds_until_next_slot(
 def next_slot_at(
     interval_seconds: int | None = None,
     *,
+    offset_seconds: int = 0,
     now: datetime | None = None,
     include_now: bool = False,
 ) -> datetime:
     current = now.astimezone(APP_TZ) if now else datetime.now(APP_TZ)
-    wait = seconds_until_next_slot(interval_seconds, now=current, include_now=include_now)
+    wait = seconds_until_next_slot(
+        interval_seconds,
+        offset_seconds=offset_seconds,
+        now=current,
+        include_now=include_now,
+    )
     return current + timedelta(seconds=wait)
 
 
@@ -326,6 +360,45 @@ def format_slot_time(when: datetime | None = None) -> str:
     when = when or next_slot_at(include_now=True)
     return when.astimezone(APP_TZ).strftime("%H:%M")
 
+
+def slot_preview_minutes(interval_minutes: int, offset_minutes: int = 0, count: int = 4) -> list[int]:
+    interval = max(1, int(interval_minutes))
+    offset = max(0, int(offset_minutes)) % interval
+    return [(offset + i * interval) % 60 for i in range(max(1, count))]
+
+
+def next_due_watch_users(
+    users: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+    include_now: bool = False,
+    config: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], float, datetime | None]:
+    """Return users due at the soonest slot, wait seconds, and that slot time."""
+    config = config or load_config()
+    current = now.astimezone(APP_TZ) if now else datetime.now(APP_TZ)
+    if not users:
+        wait = seconds_until_next_slot(poll_interval_seconds(config), now=current, include_now=include_now)
+        return [], wait, current + timedelta(seconds=wait)
+
+    soonest: float | None = None
+    due: list[dict[str, Any]] = []
+    for user in users:
+        interval_m = user_poll_interval_minutes(user, config)
+        offset_m = user_poll_offset_minutes(user, config)
+        wait = seconds_until_next_slot(
+            interval_m * 60,
+            offset_seconds=offset_m * 60,
+            now=current,
+            include_now=include_now,
+        )
+        if soonest is None or wait < soonest - 0.5:
+            soonest = wait
+            due = [user]
+        elif abs(wait - soonest) <= 0.5:
+            due.append(user)
+    wait_s = float(soonest if soonest is not None else 60)
+    return due, wait_s, current + timedelta(seconds=wait_s)
 
 def admin_token() -> str:
     load_dotenv()

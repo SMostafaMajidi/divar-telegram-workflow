@@ -129,7 +129,7 @@ class TelegramBot:
             return
 
         user = db.get_user_by_chat_id(chat_id)
-        count = _requested_count(command)
+        count = _requested_count(command, user)
         if count is None:
             notifier.send_text(
                 "برای مدیریت فیلترها وارد پنل وب شوید. «لینک پنل» را بفرستید.\n"
@@ -257,13 +257,13 @@ def _clear_pending(chat_id: str) -> None:
         _pending.pop(chat_id, None)
 
 
-def _requested_count(text: str) -> int | None:
+def _requested_count(text: str, user: dict | None = None) -> int | None:
     raw = text.strip().lower().replace("\u200c", "").translate(
         str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
     )
     raw = raw.replace("/", " ").split("@", 1)[0].strip()
     if raw in {"best", "top", "بهترین", "5 تا بهترین", "پنج تا بهترین"}:
-        return best_count()
+        return best_count(user=user)
     match = re.fullmatch(r"(?:best|top|بهترین)\s+(\d{1,2})", raw)
     if match:
         return max(1, min(int(match.group(1)), 10))

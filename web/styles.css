@@ -145,6 +145,19 @@ code { font-size: 12px; background: #f4efe7; padding: 2px 6px; border-radius: 6p
 .card h3 { color: var(--ink); font-size: 16px; }
 .meta { margin: 8px 0 12px; color: var(--muted); font-size: 13px; line-height: 1.7; }
 .card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.user-poll {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin: 4px 0 8px;
+}
+.user-poll label { font-size: 12px; font-weight: 500; }
+.user-poll input { padding: 8px 10px; border-radius: 10px; }
+.slot-hint { margin: 0 0 8px; color: var(--muted); font-size: 12px; width: 100%; }
+@media (max-width: 720px) {
+  .user-poll { grid-template-columns: 1fr; }
+}
 
 .settings {
   display: grid;

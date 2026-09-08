@@ -22,12 +22,16 @@ from config_store import (
     format_slot_time,
     load_config,
     load_dotenv,
+    next_due_watch_users,
     next_slot_at,
-    poll_interval_seconds,
+    poll_interval_minutes,
     public_base_url,
     public_settings,
-    seconds_until_next_slot,
+    slot_preview_minutes,
     update_settings,
+    user_best_count,
+    user_poll_interval_minutes,
+    user_poll_offset_minutes,
 )
 from runner import get_client, preview_spec, save_user_filter, send_best_for_user, watch_tick
 import db
@@ -59,24 +63,33 @@ class Watcher:
         self.running = False
         self.next_run_at = ""
 
+    def _watchable_users(self) -> list[dict]:
+        return [bundle["user"] for bundle in db.active_users_with_filters()]
+
     def _loop(self) -> None:
         include_now = True
         while not self._stop.is_set():
-            interval = poll_interval_seconds()
-            wait = seconds_until_next_slot(interval, include_now=include_now)
+            users = self._watchable_users()
+            due, wait, when = next_due_watch_users(users, include_now=include_now)
             include_now = False
             if wait > 0:
-                when = next_slot_at(interval, include_now=False)
                 self.next_run_at = format_slot_time(when)
                 self.last_message = f"Next scan at {self.next_run_at}."
                 if self._stop.wait(wait):
                     break
+                # Recompute who is due after sleep in case settings changed.
+                users = self._watchable_users()
+                due, _, when = next_due_watch_users(users, include_now=True)
+            if not due:
+                self.next_run_at = format_slot_time(when) if when else ""
+                continue
             try:
-                result = watch_tick()
+                result = watch_tick(user_ids=[user["id"] for user in due])
                 self.last_message = result.get("message") or "Done."
             except Exception as exc:
                 self.last_message = str(exc)
-            self.next_run_at = format_slot_time(next_slot_at(include_now=False))
+            _, _, next_when = next_due_watch_users(self._watchable_users(), include_now=False)
+            self.next_run_at = format_slot_time(next_when) if next_when else ""
 
 
 WATCHER = Watcher()
@@ -218,7 +231,7 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/admin/users":
                 self._require_admin()
-                return self._json({"users": db.list_users()})
+                return self._json({"users": [_admin_user(user) for user in db.list_users()]})
             if path == "/api/me":
                 user = self._require_user()
                 return self._json({"user": _safe_user(user)})
@@ -311,11 +324,11 @@ class Handler(BaseHTTPRequestHandler):
                     ai_enabled=bool(body.get("ai_enabled")),
                     active=bool(body.get("active", True)),
                 )
-                return self._json({"user": user}, 201)
+                return self._json({"user": _admin_user(user)}, 201)
             if path.startswith("/api/admin/users/") and path.endswith("/rotate-key"):
                 self._require_admin()
                 user_id = path.split("/")[4]
-                return self._json({"user": db.rotate_api_key(user_id)})
+                return self._json({"user": _admin_user(db.rotate_api_key(user_id))})
             if path == "/api/filters":
                 user = self._require_user()
                 return self._json({"filter": save_user_filter(user["id"], body)}, 201)
@@ -408,7 +421,14 @@ class Handler(BaseHTTPRequestHandler):
             fields["ai_enabled"] = bool(body.get("ai_enabled"))
         if "active" in body:
             fields["active"] = bool(body.get("active"))
-        return db.update_user(user_id, **fields)
+        if "poll_interval_minutes" in body:
+            fields["poll_interval_minutes"] = body.get("poll_interval_minutes")
+        if "poll_offset_minutes" in body:
+            fields["poll_offset_minutes"] = body.get("poll_offset_minutes")
+        if "best_count" in body:
+            fields["best_count"] = body.get("best_count")
+        user = db.update_user(user_id, **fields)
+        return _admin_user(user)
 
     def log_message(self, format: str, *args: object) -> None:
         sys_stderr = __import__("sys").stderr
@@ -549,6 +569,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": str(exc)}, 400)
         traceback.print_exc()
         return self._json({"error": "Internal server error."}, 500)
+
+
+def _admin_user(user: dict) -> dict:
+    config = load_config()
+    interval = user_poll_interval_minutes(user, config)
+    offset = user_poll_offset_minutes(user, config)
+    return {
+        **user,
+        "poll_interval_minutes": user.get("poll_interval_minutes"),
+        "poll_offset_minutes": int(user.get("poll_offset_minutes") or 0),
+        "best_count": user.get("best_count"),
+        "effective_poll_interval_minutes": interval,
+        "effective_poll_offset_minutes": offset,
+        "effective_best_count": user_best_count(user, config),
+        "slot_preview": slot_preview_minutes(interval, offset),
+        "default_poll_interval_minutes": poll_interval_minutes(config),
+        "default_best_count": user_best_count(None, config),
+    }
 
 
 def _safe_user(user: dict) -> dict:
