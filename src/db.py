@@ -96,9 +96,19 @@ def init_db(path: Path = DB_PATH) -> None:
                     expires_at TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS user_chats (
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    chat_id TEXT NOT NULL,
+                    chat_type TEXT,
+                    name TEXT,
+                    username TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, chat_id)
+                );
                 CREATE INDEX IF NOT EXISTS idx_filters_user ON filters(user_id);
                 CREATE INDEX IF NOT EXISTS idx_listings_user ON listings_cache(user_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_users_username ON users(telegram_username);
+                CREATE INDEX IF NOT EXISTS idx_user_chats_user ON user_chats(user_id);
                 """
             )
             cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
@@ -590,6 +600,113 @@ def user_filter_count(user_id: str) -> int:
             return int(row["c"] if row else 0)
         finally:
             conn.close()
+
+
+def _chat_public(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(row.get("chat_id") or row.get("id") or ""),
+        "type": str(row.get("chat_type") or row.get("type") or ""),
+        "name": str(row.get("name") or "").strip(),
+        "username": str(row.get("username") or "").strip(),
+    }
+
+
+def upsert_user_chat(
+    user_id: str,
+    *,
+    chat_id: str,
+    chat_type: str = "",
+    name: str = "",
+    username: str = "",
+) -> dict[str, Any]:
+    cid = str(chat_id or "").strip()
+    if not cid:
+        raise AppError("chat_id is required.")
+    with _lock:
+        conn = connect()
+        try:
+            existing = conn.execute(
+                "SELECT * FROM user_chats WHERE user_id = ? AND chat_id = ?",
+                (user_id, cid),
+            ).fetchone()
+            merged_name = name.strip() or ((existing["name"] if existing else "") or "")
+            merged_type = chat_type.strip() or ((existing["chat_type"] if existing else "") or "")
+            merged_username = username.strip() or ((existing["username"] if existing else "") or "")
+            conn.execute(
+                """
+                INSERT INTO user_chats (user_id, chat_id, chat_type, name, username, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, chat_id) DO UPDATE SET
+                    chat_type = excluded.chat_type,
+                    name = excluded.name,
+                    username = excluded.username,
+                    updated_at = excluded.updated_at
+                """,
+                (user_id, cid, merged_type, merged_name, merged_username, _now()),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM user_chats WHERE user_id = ? AND chat_id = ?",
+                (user_id, cid),
+            ).fetchone()
+            return _chat_public(dict(row))
+        finally:
+            conn.close()
+
+
+def list_user_chats(user_id: str) -> list[dict[str, Any]]:
+    user = get_user(user_id)
+    with _lock:
+        conn = connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM user_chats WHERE user_id = ? ORDER BY updated_at DESC",
+                (user_id,),
+            ).fetchall()
+            chats = {_chat_public(dict(row))["id"]: _chat_public(dict(row)) for row in rows}
+        finally:
+            conn.close()
+    if user and user.get("telegram_chat_id"):
+        private_id = str(user["telegram_chat_id"])
+        if private_id not in chats:
+            chats[private_id] = {
+                "id": private_id,
+                "type": "private",
+                "name": user.get("display_name") or user.get("login_username") or "چت شخصی",
+                "username": user.get("telegram_username") or "",
+            }
+        elif not chats[private_id].get("name"):
+            chats[private_id]["name"] = (
+                user.get("display_name") or user.get("login_username") or "چت شخصی"
+            )
+            if not chats[private_id].get("type"):
+                chats[private_id]["type"] = "private"
+    return sorted(
+        chats.values(),
+        key=lambda item: (
+            0 if item.get("type") == "private" else 1,
+            (item.get("name") or item["id"]).lower(),
+        ),
+    )
+
+
+def set_filter_chat(user_id: str, filter_id: str, chat_id: str | None) -> dict[str, Any]:
+    value = str(chat_id or "").strip() or None
+    with _lock:
+        conn = connect()
+        try:
+            cur = conn.execute(
+                "UPDATE filters SET destination_chat_id = ? WHERE id = ? AND user_id = ?",
+                (value, filter_id, user_id),
+            )
+            if cur.rowcount == 0:
+                raise AppError("Filter not found.")
+            conn.commit()
+        finally:
+            conn.close()
+    found = get_filter(filter_id, user_id)
+    assert found
+    return found
 
 
 def link_telegram_chat(username: str, chat_id: str, *, from_message: dict[str, Any] | None = None) -> dict[str, Any]:

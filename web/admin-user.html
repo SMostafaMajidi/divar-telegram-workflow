@@ -55,6 +55,22 @@
         <button class="primary small" type="submit">ذخیره پایش</button>
       </form>
 
+      <form id="route-form" class="settings">
+        <h3>اتصال فیلتر به چت</h3>
+        <p class="meta">برای دیدن گروه/کانال در لیست، ربات را آنجا عضو کنید و یک پیام بفرستید.</p>
+        <label>فیلتر
+          <select name="filter_id" id="route-filter"></select>
+        </label>
+        <label>چت مقصد
+          <select name="chat_id" id="route-chat"></select>
+        </label>
+        <div class="row">
+          <button class="primary small" type="submit">ذخیره مقصد</button>
+          <button id="refresh-chats-btn" class="ghost small" type="button">تازه‌سازی چت‌ها</button>
+        </div>
+        <div id="route-list" class="route-list"></div>
+      </form>
+
       <div class="settings">
         <h3>ابزارها</h3>
         <div class="row">
@@ -72,6 +88,6 @@
     </section>
   </main>
   <script src="/admin-common.js?v=1"></script>
-  <script src="/admin-user.js?v=1"></script>
+  <script src="/admin-user.js?v=3"></script>
 </body>
 </html>

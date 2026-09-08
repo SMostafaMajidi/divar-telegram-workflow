@@ -259,16 +259,31 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"users": [_admin_user(user) for user in db.list_users()]})
             if path.startswith("/api/admin/users/"):
                 self._require_admin()
-                user_id = path.rsplit("/", 1)[-1]
-                if user_id in {"", "rotate-key"}:
+                parts = path.strip("/").split("/")
+                # api/admin/users/{id}
+                # api/admin/users/{id}/chats
+                # api/admin/users/{id}/filters
+                if len(parts) < 4:
                     raise AppError("User not found.")
+                user_id = parts[3]
                 found = db.get_user(user_id)
                 if not found:
                     raise AppError("User not found.")
-                return self._json({"user": _admin_user(found)})
+                if len(parts) == 4:
+                    return self._json({"user": _admin_user(found)})
+                if len(parts) == 5 and parts[4] == "chats":
+                    return self._json({"chats": db.list_user_chats(user_id)})
+                if len(parts) == 5 and parts[4] == "filters":
+                    return self._json(
+                        {"filters": [filter_to_api(spec) for spec in db.list_filters(user_id)]}
+                    )
+                raise AppError("Not found.")
             if path == "/api/me":
                 user = self._require_user()
                 return self._json({"user": _safe_user(user)})
+            if path == "/api/chats":
+                user = self._require_user()
+                return self._json({"chats": db.list_user_chats(user["id"])})
             if path == "/api/filters":
                 user = self._require_user()
                 return self._json({"filters": [filter_to_api(spec) for spec in db.list_filters(user["id"])]})
@@ -363,6 +378,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._require_admin()
                 user_id = path.split("/")[4]
                 return self._json({"user": _admin_user(db.rotate_api_key(user_id))})
+            if path.startswith("/api/admin/users/") and path.endswith("/chat"):
+                self._require_admin()
+                parts = path.strip("/").split("/")
+                # api/admin/users/{uid}/filters/{fid}/chat
+                if len(parts) != 7 or parts[4] != "filters":
+                    raise AppError("Not found.")
+                user_id = parts[3]
+                filter_id = parts[5]
+                if not db.get_user(user_id):
+                    raise AppError("User not found.")
+                saved = db.set_filter_chat(user_id, filter_id, body.get("chat_id"))
+                return self._json({"filter": filter_to_api(saved)})
             if path == "/api/filters":
                 user = self._require_user()
                 return self._json({"filter": save_user_filter(user["id"], body)}, 201)
@@ -376,6 +403,11 @@ class Handler(BaseHTTPRequestHandler):
                         raise AppError("Filter not found.")
                     enabled = not current["enabled"]
                 saved = db.set_filter_enabled(filter_id, user["id"], bool(enabled))
+                return self._json({"filter": filter_to_api(saved)})
+            if path.endswith("/chat") and path.startswith("/api/filters/"):
+                user = self._require_user()
+                filter_id = path.split("/")[3]
+                saved = db.set_filter_chat(user["id"], filter_id, body.get("chat_id"))
                 return self._json({"filter": filter_to_api(saved)})
             if path == "/api/preview":
                 self._require_user()
@@ -422,8 +454,10 @@ class Handler(BaseHTTPRequestHandler):
             body = self._read_json()
             if path.startswith("/api/admin/users/"):
                 self._require_admin()
-                user_id = path.rsplit("/", 1)[-1]
-                return self._json({"user": self._admin_update_user(user_id, body)})
+                parts = path.strip("/").split("/")
+                if len(parts) != 4:
+                    raise AppError("Not found.")
+                return self._json({"user": self._admin_update_user(parts[3], body)})
             if path.startswith("/api/filters/"):
                 user = self._require_user()
                 body["id"] = path.rsplit("/", 1)[-1]

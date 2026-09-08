@@ -5,7 +5,7 @@ import threading
 import time
 
 from config_store import AppError, load_config, load_dotenv, public_base_url
-from notifier import TelegramNotifier
+from notifier import TelegramNotifier, chat_record
 from runner import best_count, build_notifier, send_best_for_user
 import db
 
@@ -82,6 +82,7 @@ class TelegramBot:
                 continue
             for update in updates:
                 self._offset = int(update.get("update_id") or 0) + 1
+                self._remember_chats(update)
                 message = (
                     update.get("message")
                     or update.get("edited_message")
@@ -93,6 +94,43 @@ class TelegramBot:
                 if not chat_id or not text:
                     continue
                 self._handle(notifier, text, chat_id, message)
+
+    def _remember_chats(self, update: dict) -> None:
+        record = chat_record(
+            (
+                (update.get("message") or {}).get("chat")
+                or (update.get("edited_message") or {}).get("chat")
+                or (update.get("channel_post") or {}).get("chat")
+                or (update.get("my_chat_member") or {}).get("chat")
+            )
+        )
+        if not record:
+            return
+        user = None
+        # Prefer chat already linked as the user's private chat.
+        user = db.get_user_by_chat_id(record["id"])
+        if not user:
+            sender = (
+                (update.get("message") or {}).get("from")
+                or (update.get("edited_message") or {}).get("from")
+                or (update.get("my_chat_member") or {}).get("from")
+                or {}
+            )
+            username = str(sender.get("username") or "").strip()
+            if username:
+                user = db.get_user_by_username(username)
+        if not user:
+            return
+        try:
+            db.upsert_user_chat(
+                user["id"],
+                chat_id=record["id"],
+                chat_type=record.get("type") or "",
+                name=record.get("name") or "",
+                username=record.get("username") or "",
+            )
+        except Exception:
+            pass
 
     def _handle(
         self,
@@ -159,11 +197,22 @@ class TelegramBot:
         user = db.get_user_by_chat_id(chat_id)
         login_url = public_base_url()
         if user and user.get("has_password") and user.get("login_username"):
+            try:
+                db.upsert_user_chat(
+                    user["id"],
+                    chat_id=chat_id,
+                    chat_type=str((message.get("chat") or {}).get("type") or "private"),
+                    name=user.get("display_name") or user.get("login_username") or "",
+                    username=user.get("telegram_username") or "",
+                )
+            except Exception:
+                pass
             notifier.send_text(
                 f"حساب شما فعال است.\n"
                 f"یوزرنیم ورود: `{user['login_username']}`\n"
                 f"ورود به پنل:\n{login_url}\n\n"
                 "فیلتر بسازید؛ پایش خودکار آگهی‌های تازه را به همین چت می‌فرستد.\n"
+                "برای افزودن گروه/کانال: ربات را آنجا ادمین کنید و یک پیام بفرستید.\n"
                 "برای تغییر یوزرنیم/رمز: /resetpass",
                 reply_markup=KEYBOARD,
                 chat_id=chat_id,
@@ -216,11 +265,22 @@ class TelegramBot:
                 return
             _clear_pending(chat_id)
             login_url = public_base_url()
+            try:
+                db.upsert_user_chat(
+                    user["id"],
+                    chat_id=chat_id,
+                    chat_type=str((message.get("chat") or {}).get("type") or "private"),
+                    name=user.get("display_name") or user.get("login_username") or "",
+                    username=user.get("telegram_username") or "",
+                )
+            except Exception:
+                pass
             notifier.send_text(
                 "ثبت‌نام انجام شد.\n\n"
                 f"یوزرنیم: `{user['login_username']}`\n"
                 f"ورود به پنل:\n{login_url}\n\n"
-                "در پنل فیلتر بسازید؛ آگهی‌های تازه به همین چت ارسال می‌شود.",
+                "در پنل فیلتر بسازید؛ آگهی‌های تازه به همین چت ارسال می‌شود.\n"
+                "برای افزودن گروه/کانال: ربات را عضو کنید و یک پیام بفرستید.",
                 reply_markup=KEYBOARD,
                 chat_id=chat_id,
             )

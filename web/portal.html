@@ -25,7 +25,23 @@
         <h2>فیلترها</h2>
         <button id="add-btn" class="primary small" type="button">افزودن فیلتر</button>
       </div>
-      <p class="hint">دسته را انتخاب کنید؛ فیلدهای همان دسته از دیوار بارگذاری می‌شود. آگهی‌های تازه به تلگرام متصل شما ارسال می‌گردد.</p>
+      <p class="hint">دسته را انتخاب کنید؛ فیلدهای همان دسته از دیوار بارگذاری می‌شود.</p>
+
+      <form id="route-form" class="settings route-box">
+        <h3>اتصال فیلتر به چت</h3>
+        <p class="meta">برای دیدن گروه/کانال: ربات را عضو کنید و یک پیام بفرستید، بعد تازه‌سازی بزنید.</p>
+        <label>فیلتر
+          <select id="route-filter" name="filter_id"></select>
+        </label>
+        <label>چت مقصد
+          <select id="route-chat" name="chat_id"></select>
+        </label>
+        <div class="row">
+          <button class="primary small" type="submit">ذخیره مقصد</button>
+          <button id="refresh-chats-btn" class="ghost small" type="button">تازه‌سازی چت‌ها</button>
+        </div>
+      </form>
+
       <div id="filter-list" class="filter-list"></div>
       <div class="settings">
         <p id="feed-link" class="meta"></p>
@@ -76,10 +92,10 @@
         <div id="exclude-chips" class="chips"></div>
         <input id="exclude-input" placeholder="کلمه و Enter">
       </div>
-      <label>مقصد تلگرام (اختیاری)
-        <input name="chat_id" placeholder="خالی = چت شخصی شما · برای کانال: آی‌دی مثل -100…">
+      <label>مقصد تلگرام
+        <select name="chat_id" id="filter-chat"></select>
       </label>
-      <p class="hint">برای کانال/گروه: ربات را ادمین کنید، یک پیام در کانال بفرستید، آی‌دی را اینجا بگذارید.</p>
+      <p class="hint">خالی = چت شخصی. برای گروه/کانال ربات را ادمین کنید و یک پیام بفرستید.</p>
       <div class="row">
         <label>تعداد صفحات دیوار
           <input name="max_pages" type="number" min="1" max="8" value="3">
@@ -95,6 +111,6 @@
       </footer>
     </form>
   </dialog>
-  <script src="/portal.js"></script>
+  <script src="/portal.js?v=3"></script>
 </body>
 </html>
