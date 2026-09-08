@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 import threading
 import traceback
 from http.cookies import SimpleCookie
@@ -138,6 +139,7 @@ class Handler(BaseHTTPRequestHandler):
             "/app-api.js",
             "/portal.js",
             "/billing.js",
+            "/bank-card.js",
             "/feed.js",
             "/dates.js",
         } or path.startswith("/u/") or path.startswith("/admin/users/"):
@@ -292,6 +294,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/app-api.js",
                 "/portal.js",
                 "/billing.js",
+                "/bank-card.js",
                 "/feed.js",
                 "/dates.js",
                 "/admin-payments.js",
@@ -332,6 +335,38 @@ class Handler(BaseHTTPRequestHandler):
                 self._require_admin()
                 status = (query.get("status") or [""])[0].strip() or None
                 return self._json({"invoices": db.list_invoices(status=status)})
+            if path.startswith("/api/invoices/") and path.endswith("/receipt"):
+                parts = path.strip("/").split("/")
+                if len(parts) != 4:
+                    raise AppError("Not found.")
+                invoice_id = parts[2]
+                invoice = db.get_invoice(invoice_id)
+                if not invoice:
+                    raise AppError("فاکتور پیدا نشد.")
+                user = None
+                try:
+                    user = self._require_user()
+                except AppError:
+                    user = None
+                if user and user["id"] == invoice["user_id"]:
+                    pass
+                elif self._admin_logged_in():
+                    pass
+                else:
+                    raise AppError("Login required.")
+                file_info = db.invoice_receipt_file(invoice_id)
+                if not file_info:
+                    raise AppError("فیشی آپلود نشده.")
+                path_file, mime, download_name = file_info
+                payload = path_file.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Content-Disposition", f'inline; filename="{download_name}"')
+                self.send_header("Cache-Control", "private, no-cache")
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             if path == "/api/categories":
                 return self._json(category_payload())
             if path == "/api/divar-filters":
@@ -409,7 +444,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
         try:
-            body = self._read_json()
+            ctype = (self.headers.get("Content-Type") or "").lower()
+            body: dict = {}
+            if "multipart/form-data" not in ctype:
+                body = self._read_json()
             if path == "/api/login":
                 user = db.authenticate_login(
                     str(body.get("username") or ""),
@@ -483,9 +521,26 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/invoices/") and path.endswith("/paid"):
                 user = self._require_user()
                 invoice_id = path.split("/")[3]
-                invoice = db.mark_invoice_paid_by_user(
-                    invoice_id, user["id"], str(body.get("payer_note") or "")
-                )
+                ctype = (self.headers.get("Content-Type") or "").lower()
+                if "multipart/form-data" in ctype:
+                    fields, files = self._read_multipart()
+                    file_item = files.get("receipt")
+                    if not file_item:
+                        raise AppError("فیش واریز را انتخاب کنید.")
+                    filename, content, content_type = file_item
+                    invoice = db.save_invoice_receipt(
+                        invoice_id,
+                        user["id"],
+                        filename=filename,
+                        content=content,
+                        content_type=content_type,
+                        payer_note=str(fields.get("payer_note") or ""),
+                    )
+                else:
+                    # JSON without file only allowed if receipt already uploaded
+                    invoice = db.mark_invoice_paid_by_user(
+                        invoice_id, user["id"], str(body.get("payer_note") or "")
+                    )
                 return self._json({"invoice": invoice})
             if path.startswith("/api/admin/invoices/") and path.endswith("/confirm"):
                 self._require_admin()
@@ -742,6 +797,52 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError as exc:
             raise AppError("Invalid JSON.") from exc
         return data if isinstance(data, dict) else {}
+
+    def _read_multipart(self) -> tuple[dict[str, str], dict[str, tuple[str, bytes, str]]]:
+        ctype = self.headers.get("Content-Type") or ""
+        match = re.search(r"boundary=([^;]+)", ctype, flags=re.I)
+        if not match:
+            raise AppError("Invalid multipart request.")
+        boundary = match.group(1).strip().strip('"')
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0 or length > 7 * 1024 * 1024:
+            raise AppError("حجم درخواست بیش از حد مجاز است.")
+        raw = self.rfile.read(length)
+        marker = b"--" + boundary.encode("utf-8")
+        fields: dict[str, str] = {}
+        files: dict[str, tuple[str, bytes, str]] = {}
+        for part in raw.split(marker):
+            if not part or part in (b"--\r\n", b"--"):
+                continue
+            if part.startswith(b"--"):
+                continue
+            if part.startswith(b"\r\n"):
+                part = part[2:]
+            if part.endswith(b"\r\n"):
+                part = part[:-2]
+            header_blob, sep, content = part.partition(b"\r\n\r\n")
+            if not sep:
+                continue
+            headers = header_blob.decode("utf-8", errors="ignore")
+            disp = ""
+            part_ctype = "application/octet-stream"
+            for line in headers.split("\r\n"):
+                lower = line.lower()
+                if lower.startswith("content-disposition:"):
+                    disp = line
+                elif lower.startswith("content-type:"):
+                    part_ctype = line.split(":", 1)[1].strip()
+            name_m = re.search(r'name="([^"]+)"', disp)
+            if not name_m:
+                continue
+            name = name_m.group(1)
+            file_m = re.search(r'filename="([^"]*)"', disp)
+            if file_m is not None:
+                filename = file_m.group(1) or "receipt"
+                files[name] = (filename, content, part_ctype)
+            else:
+                fields[name] = content.decode("utf-8", errors="ignore")
+        return fields, files
 
     def _file(self, path: Path) -> None:
         if not path.is_file() or WEB_DIR not in path.resolve().parents and path.parent != WEB_DIR:

@@ -928,6 +928,101 @@ select[multiple] { min-height: 120px; }
   gap: 8px;
 }
 .pay-box h3 { margin: 0; font-size: 16px; }
+
+.bank-card {
+  position: relative;
+  width: min(100%, 380px);
+  aspect-ratio: 1.586;
+  border-radius: 18px;
+  padding: 22px 22px 18px;
+  color: #f4f7fb;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(255, 255, 255, 0.2), transparent 42%),
+    linear-gradient(135deg, #1b3a4b 0%, #0f766e 48%, #134e4a 100%);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  display: grid;
+  align-content: end;
+  gap: 6px;
+  overflow: hidden;
+}
+.bank-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -40% auto;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+.bank-card-chip {
+  position: absolute;
+  top: 22px;
+  left: 22px;
+  width: 44px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #d6b25e, #f0d58a 55%, #b8893a);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+.bank-card-label {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.bank-card-number {
+  margin: 0 0 10px;
+  font-size: clamp(18px, 4vw, 24px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+.bank-card-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: end;
+}
+.bank-card-holder {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.bank-card-copy {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.18);
+  color: #fff;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 1;
+}
+.bank-card-copy:hover { background: rgba(0, 0, 0, 0.28); }
+.bank-card-note { margin-top: 10px; }
+
+.receipt-upload {
+  display: grid;
+  gap: 8px;
+}
+.receipt-preview {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.receipt-preview img {
+  max-width: min(100%, 360px);
+  max-height: 280px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.2);
+}
+
 .invoice-list { display: grid; gap: 10px; margin-top: 12px; }
 .invoice-card {
   border: 1px solid var(--line);

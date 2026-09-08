@@ -34,18 +34,7 @@ async function api(path, options = {}) {
 }
 
 function renderPay(payment) {
-  if (!payment) return;
-  if (payment.configured) {
-    payInfo.innerHTML = `
-      <h3>کارت مقصد</h3>
-      <p class="meta">${payment.note || ""}</p>
-      <p><b>${payment.card_holder}</b></p>
-      <p class="mono" dir="ltr">${payment.card_number}</p>
-      ${payment.support_url ? `<p class="meta"><a href="${payment.support_url}" target="_blank">پشتیبانی</a></p>` : ""}
-    `;
-  } else {
-    payInfo.innerHTML = `<p class="meta">کارت هنوز تنظیم نشده؛ بعد از صدور فاکتور با پشتیبانی هماهنگ کنید.</p>`;
-  }
+  renderBankCard(payInfo, payment || {});
 }
 
 function renderInvoices(invoices) {
@@ -58,13 +47,20 @@ function renderInvoices(invoices) {
     const card = document.createElement("article");
     card.className = "invoice-card";
     card.id = inv.id;
-    const actions =
-      inv.status === "pending" || inv.status === "awaiting_review"
-        ? `<div class="row">
-            <input data-note placeholder="کد پیگیری واریز (اختیاری)" value="${inv.payer_note || ""}">
-            <button class="primary small" type="button" data-paid="${inv.id}">پرداخت کردم</button>
-          </div>`
-        : "";
+    const canUpload = inv.status === "pending" || inv.status === "awaiting_review";
+    const receiptLink = inv.has_receipt
+      ? `<p class="meta"><a href="/api/invoices/${inv.id}/receipt" target="_blank" rel="noreferrer">مشاهده فیش آپلودشده</a></p>`
+      : "";
+    const actions = canUpload
+      ? `<div class="receipt-upload">
+          <label class="meta">فیش واریز (عکس یا PDF)
+            <input type="file" data-file accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf">
+          </label>
+          <input data-note placeholder="توضیح اختیاری" value="${inv.payer_note || ""}">
+          <button class="primary small" type="button" data-paid="${inv.id}">ارسال فیش برای تأیید</button>
+          <p class="hint">فیش را اینجا آپلود کنید؛ نیازی به ارسال در تلگرام نیست.</p>
+        </div>`
+      : "";
     card.innerHTML = `
       <div class="card-top">
         <div>
@@ -73,7 +69,8 @@ function renderInvoices(invoices) {
         </div>
         <span class="pill ${inv.status === "paid" ? "ok" : inv.status === "rejected" ? "warn" : ""}">${STATUS[inv.status] || inv.status}</span>
       </div>
-      <p class="meta">شناسه واریز را در توضیحات کارت‌به‌کارت بنویسید تا سریع تأیید شود.</p>
+      <p class="meta">مبلغ را کارت‌به‌کارت کنید و شناسه واریز را در توضیحات بنویسید، بعد فیش را آپلود کنید.</p>
+      ${receiptLink}
       ${actions}
     `;
     list.append(card);
@@ -81,11 +78,27 @@ function renderInvoices(invoices) {
   list.querySelectorAll("[data-paid]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.paid;
-      const note = btn.closest(".invoice-card").querySelector("[data-note]")?.value || "";
+      const wrap = btn.closest(".invoice-card");
+      const note = wrap.querySelector("[data-note]")?.value || "";
+      const fileInput = wrap.querySelector("[data-file]");
+      const file = fileInput?.files?.[0];
+      if (!file) {
+        toast("فیش واریز را انتخاب کنید", "err");
+        return;
+      }
       btn.disabled = true;
       try {
-        await api(`/api/invoices/${id}/paid`, { method: "POST", body: { payer_note: note } });
-        toast("ثبت شد؛ بعد از تأیید پشتیبانی پلن فعال می‌شود.", "ok");
+        const fd = new FormData();
+        fd.append("receipt", file);
+        fd.append("payer_note", note);
+        const res = await fetch(`/api/invoices/${id}/paid`, {
+          method: "POST",
+          credentials: "same-origin",
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "خطا");
+        toast("فیش ثبت شد؛ منتظر تأیید ادمین بمانید.", "ok");
         await boot();
       } catch (err) {
         toast(err.message, "err");

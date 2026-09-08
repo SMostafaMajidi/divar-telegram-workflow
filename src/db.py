@@ -184,6 +184,11 @@ def init_db(path: Path = DB_PATH) -> None:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status, created_at DESC)"
             )
+            inv_cols = {row[1] for row in conn.execute("PRAGMA table_info(invoices)").fetchall()}
+            if inv_cols and "receipt_path" not in inv_cols:
+                conn.execute("ALTER TABLE invoices ADD COLUMN receipt_path TEXT")
+            if inv_cols and "receipt_name" not in inv_cols:
+                conn.execute("ALTER TABLE invoices ADD COLUMN receipt_name TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS plans (
@@ -1349,6 +1354,9 @@ def _invoice_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "status": row["status"],
         "ref_code": row["ref_code"],
         "payer_note": row["payer_note"] or "",
+        "receipt_path": row["receipt_path"] if "receipt_path" in row.keys() else "",
+        "receipt_name": row["receipt_name"] if "receipt_name" in row.keys() else "",
+        "has_receipt": bool(row["receipt_path"] if "receipt_path" in row.keys() else None),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "paid_at": row["paid_at"] or "",
@@ -1474,7 +1482,14 @@ def list_invoices(*, status: str | None = None, limit: int = 100) -> list[dict[s
             conn.close()
 
 
-def mark_invoice_paid_by_user(invoice_id: str, user_id: str, payer_note: str = "") -> dict[str, Any]:
+def mark_invoice_paid_by_user(
+    invoice_id: str,
+    user_id: str,
+    payer_note: str = "",
+    *,
+    receipt_path: str | None = None,
+    receipt_name: str | None = None,
+) -> dict[str, Any]:
     with _lock:
         conn = connect()
         try:
@@ -1483,20 +1498,119 @@ def mark_invoice_paid_by_user(invoice_id: str, user_id: str, payer_note: str = "
                 raise AppError("فاکتور پیدا نشد.")
             if row["status"] not in {"pending", "awaiting_review"}:
                 raise AppError("این فاکتور قابل به‌روزرسانی نیست.")
+            existing_receipt = ""
+            if "receipt_path" in row.keys():
+                existing_receipt = row["receipt_path"] or ""
+            new_receipt = receipt_path if receipt_path is not None else existing_receipt
+            if not new_receipt:
+                raise AppError("فیش واریز را آپلود کنید.")
             now = _now()
             conn.execute(
                 """
                 UPDATE invoices
-                SET status = 'awaiting_review', payer_note = ?, updated_at = ?
+                SET status = 'awaiting_review',
+                    payer_note = ?,
+                    receipt_path = ?,
+                    receipt_name = ?,
+                    updated_at = ?
                 WHERE id = ?
                 """,
-                (str(payer_note or "").strip()[:200], now, invoice_id),
+                (
+                    str(payer_note or "").strip()[:200],
+                    new_receipt,
+                    (receipt_name if receipt_name is not None else (row["receipt_name"] if "receipt_name" in row.keys() else ""))
+                    or "",
+                    now,
+                    invoice_id,
+                ),
             )
             conn.commit()
             refreshed = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
             return _invoice_from_row(refreshed)  # type: ignore[return-value]
         finally:
             conn.close()
+
+
+def save_invoice_receipt(
+    invoice_id: str,
+    user_id: str,
+    *,
+    filename: str,
+    content: bytes,
+    content_type: str,
+    payer_note: str = "",
+) -> dict[str, Any]:
+    invoice = get_invoice(invoice_id)
+    if not invoice or invoice["user_id"] != user_id:
+        raise AppError("فاکتور پیدا نشد.")
+    if invoice["status"] not in {"pending", "awaiting_review"}:
+        raise AppError("این فاکتور قابل به‌روزرسانی نیست.")
+    mime = (content_type or "").split(";")[0].strip().lower()
+    allowed = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "application/pdf": ".pdf",
+    }
+    if mime not in allowed:
+        # sniff from filename
+        lower = filename.lower()
+        if lower.endswith(".pdf"):
+            mime = "application/pdf"
+        elif lower.endswith(".png"):
+            mime = "image/png"
+        elif lower.endswith(".webp"):
+            mime = "image/webp"
+        elif lower.endswith((".jpg", ".jpeg")):
+            mime = "image/jpeg"
+        else:
+            raise AppError("فقط عکس (JPG/PNG/WEBP) یا PDF مجاز است.")
+    if len(content) < 32:
+        raise AppError("فایل فیش خالی یا ناقص است.")
+    if len(content) > 6 * 1024 * 1024:
+        raise AppError("حجم فیش حداکثر ۶ مگابایت باشد.")
+    receipts_dir = DATA_DIR / "receipts"
+    receipts_dir.mkdir(parents=True, exist_ok=True)
+    ext = allowed[mime]
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", Path(filename or f"receipt{ext}").name)[:80]
+    stored = f"{invoice_id}{ext}"
+    path = receipts_dir / stored
+    # remove old receipt files for this invoice
+    for old in receipts_dir.glob(f"{invoice_id}.*"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    path.write_bytes(content)
+    return mark_invoice_paid_by_user(
+        invoice_id,
+        user_id,
+        payer_note,
+        receipt_path=stored,
+        receipt_name=safe_name or stored,
+    )
+
+
+def invoice_receipt_file(invoice_id: str) -> tuple[Path, str, str] | None:
+    invoice = get_invoice(invoice_id)
+    if not invoice or not invoice.get("receipt_path"):
+        return None
+    path = (DATA_DIR / "receipts" / Path(invoice["receipt_path"]).name).resolve()
+    receipts_root = (DATA_DIR / "receipts").resolve()
+    if receipts_root not in path.parents and path.parent != receipts_root:
+        return None
+    if not path.is_file():
+        return None
+    suffix = path.suffix.lower()
+    mime = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".pdf": "application/pdf",
+    }.get(suffix, "application/octet-stream")
+    return path, mime, invoice.get("receipt_name") or path.name
 
 
 def confirm_invoice(invoice_id: str) -> dict[str, Any]:

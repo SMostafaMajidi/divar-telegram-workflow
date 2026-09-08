@@ -18,10 +18,16 @@ function render(invoices) {
     const name = inv.user_name || inv.login_username || inv.telegram_username || inv.user_id;
     const card = document.createElement("article");
     card.className = "invoice-card";
+    const receipt = inv.has_receipt
+      ? `<div class="receipt-preview">
+           <a class="ghost small" href="/api/invoices/${inv.id}/receipt" target="_blank" rel="noreferrer">باز کردن فیش</a>
+           <img src="/api/invoices/${inv.id}/receipt" alt="فیش" loading="lazy" onerror="this.style.display='none'">
+         </div>`
+      : `<p class="meta">فیش آپلود نشده</p>`;
     const actions =
       inv.status === "pending" || inv.status === "awaiting_review"
         ? `<div class="row">
-            <button class="primary small" type="button" data-confirm="${inv.id}">تأیید و فعال‌سازی پلن</button>
+            <button class="primary small" type="button" data-confirm="${inv.id}" ${inv.has_receipt ? "" : "disabled"}>تأیید و فعال‌سازی پلن</button>
             <button class="ghost small" type="button" data-reject="${inv.id}">رد</button>
             ${inv.user_id ? `<a class="ghost small" href="/admin/users/${inv.user_id}">صفحه مشتری</a>` : ""}
           </div>`
@@ -33,11 +39,12 @@ function render(invoices) {
         <div>
           <h3>${name}</h3>
           <p class="meta">${inv.plan_name} · ${inv.amount_label} · شناسه <b dir="ltr">${inv.ref_code}</b></p>
-          <p class="meta">یوزرنیم: @${inv.login_username || "—"} · پیگیری: ${inv.payer_note || "—"}</p>
+          <p class="meta">یوزرنیم: @${inv.login_username || "—"} · توضیح: ${inv.payer_note || "—"}</p>
           <p class="meta">${typeof formatJalali === "function" ? formatJalali(inv.created_at, { withTime: true }) : inv.created_at}</p>
         </div>
         <span class="pill ${inv.status === "paid" ? "ok" : inv.status === "awaiting_review" ? "warn" : ""}">${STATUS[inv.status] || inv.status}</span>
       </div>
+      ${receipt}
       ${actions}
     `;
     list.append(card);

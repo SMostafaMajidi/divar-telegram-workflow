@@ -1,4 +1,18 @@
 const form = $("#pay-form");
+const preview = $("#card-preview");
+
+function refreshPreview(p) {
+  renderBankCard(preview, p || {
+    card_number: form.card_number.value,
+    card_holder: form.card_holder.value,
+    note: form.note.value,
+    support_telegram: form.support_telegram.value,
+    support_url: form.support_telegram.value
+      ? `https://t.me/${form.support_telegram.value.replace(/^@/, "")}`
+      : "",
+    configured: !!(form.card_number.value.trim() && form.card_holder.value.trim()),
+  });
+}
 
 async function load() {
   const data = await api("/api/admin/payment-settings");
@@ -7,12 +21,17 @@ async function load() {
   form.card_holder.value = p.card_holder || "";
   form.support_telegram.value = p.support_telegram || "";
   form.note.value = p.note || "";
+  renderBankCard(preview, p);
 }
+
+["input", "change"].forEach((evt) => {
+  form.addEventListener(evt, () => refreshPreview());
+});
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    await api("/api/admin/payment-settings", {
+    const data = await api("/api/admin/payment-settings", {
       method: "POST",
       body: {
         card_number: form.card_number.value.trim(),
@@ -22,6 +41,7 @@ form.addEventListener("submit", async (e) => {
       },
     });
     toast("تنظیمات پرداخت ذخیره شد", "ok");
+    renderBankCard(preview, data.payment);
   } catch (err) {
     toast(err.message, "err");
   }

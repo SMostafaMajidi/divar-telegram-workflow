@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>قیمت‌ها — دیوار واچر</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark7">
+  <link rel="stylesheet" href="/styles.css?v=dark9">
 </head>
 <body>
   <header class="topbar">
@@ -37,6 +37,7 @@
     </section>
   </main>
   <script src="/dates.js?v=2"></script>
+  <script src="/bank-card.js?v=1"></script>
   <script>
     bindNavMenus();
     const toastEl = document.getElementById("toast");
@@ -106,18 +107,12 @@
       root.querySelectorAll("[data-plan]").forEach((btn) => {
         btn.addEventListener("click", () => buy(btn.dataset.plan));
       });
+      payBox.hidden = false;
       if (payment.configured) {
-        payBox.hidden = false;
-        payBox.innerHTML = `
-          <h3>پرداخت کارت‌به‌کارت</h3>
-          <p class="meta">${payment.note || ""}</p>
-          <p><b>${payment.card_holder}</b></p>
-          <p class="mono" dir="ltr">${payment.card_number}</p>
-          ${payment.support_url ? `<p class="meta"><a href="${payment.support_url}" target="_blank">پشتیبانی تلگرام</a></p>` : ""}
-        `;
+        payBox.innerHTML = `<h3>پرداخت کارت‌به‌کارت</h3><div id="bank-card-mount"></div>`;
+        renderBankCard(document.getElementById("bank-card-mount"), payment);
       } else {
-        payBox.hidden = false;
-        payBox.innerHTML = `<p class="meta">اطلاعات کارت هنوز در تنظیمات سرور ست نشده. پس از صدور فاکتور، پشتیبانی مبلغ و کارت را اعلام می‌کند.</p>`;
+        payBox.innerHTML = `<p class="meta">اطلاعات کارت هنوز تنظیم نشده. بعد از خرید، در صورتحساب یا پشتیبانی هماهنگ کنید.</p>`;
       }
     }
     boot();
