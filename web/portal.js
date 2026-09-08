@@ -382,8 +382,11 @@ function renderStatus() {
       : `پلن ${plan} · ${status}`;
   }
   if (els.filterQuota) {
-    els.filterQuota.textContent =
-      max != null ? `${used} از ${max} فیلتر` : `${used} فیلتر`;
+    const parts = [max != null ? `${used} از ${max} فیلتر` : `${used} فیلتر`];
+    if (state.user.max_criteria != null) {
+      parts.push(`تا ${state.user.max_criteria} معیار روی هر فیلتر`);
+    }
+    els.filterQuota.textContent = parts.join(" · ");
   }
   const aiOn = !!state.user.ai_enabled;
   if (els.aiPill) {

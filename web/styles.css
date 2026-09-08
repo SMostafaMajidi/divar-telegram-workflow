@@ -949,6 +949,39 @@ select[multiple] { min-height: 120px; }
 .legal-copy h3 { margin: 10px 0 0; font-size: 16px; }
 .legal-copy p { margin: 0; color: var(--muted); }
 
+.plan-admin-list { display: grid; gap: 10px; }
+.invoice-card.off { opacity: 0.65; }
+dialog {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 0;
+  background: #121820;
+  color: var(--ink);
+  max-width: min(560px, 94vw);
+  width: 100%;
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+dialog form { padding: 16px; display: grid; gap: 12px; }
+dialog header { margin: 0; }
+dialog footer { justify-content: flex-end; }
+dialog .icon {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+}
+textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
+  font: inherit;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
 .topbar-meta {
   margin: 6px 0 0;
   max-width: 42ch;

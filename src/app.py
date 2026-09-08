@@ -28,6 +28,7 @@ from config_store import (
     public_base_url,
     public_settings,
     payment_info,
+    upsert_env_value,
     slot_preview_minutes,
     update_settings,
     user_best_count,
@@ -121,6 +122,8 @@ class Handler(BaseHTTPRequestHandler):
             "/app/api",
             "/app/billing",
             "/admin/payments",
+            "/admin/plans",
+            "/admin/payment-settings",
             "/styles.css",
             "/app.js",
             "/admin.js",
@@ -128,6 +131,8 @@ class Handler(BaseHTTPRequestHandler):
             "/admin-settings.js",
             "/admin-user.js",
             "/admin-payments.js",
+            "/admin-plans.js",
+            "/admin-payment-settings.js",
             "/admin-login.js",
             "/app-login.js",
             "/app-api.js",
@@ -204,6 +209,20 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 return self._file(WEB_DIR / "admin-payments.html")
+            if path == "/admin/plans":
+                if not self._admin_logged_in():
+                    self.send_response(302)
+                    self.send_header("Location", "/admin/login")
+                    self.end_headers()
+                    return
+                return self._file(WEB_DIR / "admin-plans.html")
+            if path == "/admin/payment-settings":
+                if not self._admin_logged_in():
+                    self.send_response(302)
+                    self.send_header("Location", "/admin/login")
+                    self.end_headers()
+                    return
+                return self._file(WEB_DIR / "admin-payment-settings.html")
             if path.startswith("/admin/users/"):
                 if not self._admin_logged_in():
                     self.send_response(302)
@@ -276,6 +295,8 @@ class Handler(BaseHTTPRequestHandler):
                 "/feed.js",
                 "/dates.js",
                 "/admin-payments.js",
+                "/admin-plans.js",
+                "/admin-payment-settings.js",
             }:
                 return self._file(WEB_DIR / path.lstrip("/"))
 
@@ -294,7 +315,15 @@ class Handler(BaseHTTPRequestHandler):
                 from plans import list_plans
 
                 return self._json({"plans": list_plans(), "payment": payment_info()})
+            if path == "/api/admin/plans":
+                self._require_admin()
+                from plans import list_plans
+
+                return self._json({"plans": list_plans(include_inactive=True)})
             if path == "/api/payment-info":
+                return self._json({"payment": payment_info()})
+            if path == "/api/admin/payment-settings":
+                self._require_admin()
                 return self._json({"payment": payment_info()})
             if path == "/api/invoices":
                 user = self._require_user()
@@ -431,6 +460,22 @@ class Handler(BaseHTTPRequestHandler):
                     active=bool(body.get("active", True)),
                 )
                 return self._json({"user": _admin_user(user)}, 201)
+            if path == "/api/admin/plans":
+                self._require_admin()
+                create = bool(body.get("create"))
+                plan = db.upsert_plan(body, create=create)
+                from plans import format_toman
+
+                plan = dict(plan)
+                plan["price_label"] = format_toman(plan.get("price_toman"))
+                return self._json({"plan": plan}, 201 if create else 200)
+            if path == "/api/admin/payment-settings":
+                self._require_admin()
+                upsert_env_value("PAYMENT_CARD_NUMBER", str(body.get("card_number") or "").strip())
+                upsert_env_value("PAYMENT_CARD_HOLDER", str(body.get("card_holder") or "").strip())
+                upsert_env_value("SUPPORT_TELEGRAM", str(body.get("support_telegram") or "").strip().lstrip("@"))
+                upsert_env_value("PAYMENT_NOTE", str(body.get("note") or "").strip())
+                return self._json({"payment": payment_info(), "ok": True})
             if path == "/api/invoices":
                 user = self._require_user()
                 invoice = db.create_invoice(user["id"], str(body.get("plan_id") or ""))
@@ -555,6 +600,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not user_id or user_id == "users":
                     raise AppError("User not found.")
                 db.delete_user(user_id)
+                return self._json({"ok": True})
+            if path.startswith("/api/admin/plans/"):
+                self._require_admin()
+                plan_id = path.rsplit("/", 1)[-1]
+                db.delete_plan(plan_id)
                 return self._json({"ok": True})
             if path.startswith("/api/filters/"):
                 user = self._require_user()
@@ -758,6 +808,8 @@ def _admin_user(user: dict) -> dict:
 
 
 def _safe_user(user: dict) -> dict:
+    from plans import effective_max_criteria
+
     return {
         "id": user["id"],
         "telegram_username": user.get("telegram_username") or "",
@@ -772,6 +824,7 @@ def _safe_user(user: dict) -> dict:
         "plan_id": user.get("plan_id") or "trial",
         "plan_name": user.get("plan_name") or "",
         "max_filters": user.get("effective_max_filters"),
+        "max_criteria": effective_max_criteria(user),
         "expires_at": user.get("expires_at") or "",
         "subscription_status": user.get("subscription_status") or "",
         "telegram_chat_id": user.get("telegram_chat_id") or "",

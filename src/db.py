@@ -14,7 +14,7 @@ from typing import Any
 from config_store import DATA_DIR, AppError
 
 DB_PATH = DATA_DIR / "service.db"
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 
 def _now() -> str:
@@ -184,9 +184,65 @@ def init_db(path: Path = DB_PATH) -> None:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status, created_at DESC)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS plans (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    tagline TEXT,
+                    price_toman INTEGER NOT NULL DEFAULT 0,
+                    max_filters INTEGER NOT NULL DEFAULT 1,
+                    max_criteria INTEGER,
+                    poll_interval_minutes INTEGER NOT NULL DEFAULT 5,
+                    ai_enabled INTEGER NOT NULL DEFAULT 0,
+                    api_access INTEGER NOT NULL DEFAULT 0,
+                    duration_days INTEGER NOT NULL DEFAULT 30,
+                    features_json TEXT NOT NULL DEFAULT '[]',
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    active INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            _seed_plans(conn)
             conn.commit()
         finally:
             conn.close()
+
+
+def _seed_plans(conn: sqlite3.Connection) -> None:
+    from plans import DEFAULT_PLANS
+
+    count = conn.execute("SELECT COUNT(*) AS c FROM plans").fetchone()
+    if count and int(count["c"] or 0) > 0:
+        return
+    now = _now()
+    for plan in DEFAULT_PLANS.values():
+        conn.execute(
+            """
+            INSERT INTO plans (
+                id, name, tagline, price_toman, max_filters, max_criteria,
+                poll_interval_minutes, ai_enabled, api_access, duration_days,
+                features_json, sort_order, active, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                plan["id"],
+                plan["name"],
+                plan.get("tagline") or "",
+                int(plan.get("price_toman") or 0),
+                int(plan.get("max_filters") or 1),
+                None if plan.get("max_criteria") is None else int(plan["max_criteria"]),
+                int(plan.get("poll_interval_minutes") or 5),
+                1 if plan.get("ai_enabled") else 0,
+                1 if plan.get("api_access") else 0,
+                int(plan.get("duration_days") or 30),
+                json.dumps(plan.get("features") or [], ensure_ascii=False),
+                int(plan.get("sort_order") or 0),
+                1 if plan.get("active", True) else 0,
+                now,
+            ),
+        )
 
 
 def normalize_username(username: str) -> str:
@@ -1054,7 +1110,7 @@ def apply_subscription(
 
 
 def upsert_filter(user_id: str, spec: dict[str, Any]) -> dict[str, Any]:
-    from plans import effective_max_filters, subscription_ok
+    from plans import assert_filter_criteria_allowed, effective_max_filters, subscription_ok
 
     filter_id = str(spec.get("id") or uuid.uuid4().hex[:10])
     user = get_user(user_id)
@@ -1062,6 +1118,8 @@ def upsert_filter(user_id: str, spec: dict[str, Any]) -> dict[str, Any]:
         raise AppError("User not found.")
     if not subscription_ok(user):
         raise AppError("اشتراک منقضی یا غیرفعال است. با پشتیبانی هماهنگ کنید.")
+    assert_filter_criteria_allowed(user, spec)
+    limit = effective_max_filters(user)
     with _lock:
         conn = connect()
         try:
@@ -1075,7 +1133,6 @@ def upsert_filter(user_id: str, spec: dict[str, Any]) -> dict[str, Any]:
                     (user_id,),
                 ).fetchone()
                 used = int(count["c"] if count else 0)
-                limit = effective_max_filters(user)
                 if used >= limit:
                     raise AppError(f"سقف پلن شما {limit} فیلتر است. برای افزایش پلن با پشتیبانی هماهنگ کنید.")
             values = (
@@ -1490,5 +1547,157 @@ def reject_invoice(invoice_id: str) -> dict[str, Any]:
             conn.commit()
             refreshed = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
             return _invoice_from_row(refreshed)  # type: ignore[return-value]
+        finally:
+            conn.close()
+
+
+def _plan_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    try:
+        features = json.loads(row["features_json"] or "[]")
+    except json.JSONDecodeError:
+        features = []
+    if not isinstance(features, list):
+        features = []
+    max_criteria = row["max_criteria"]
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "tagline": row["tagline"] or "",
+        "price_toman": int(row["price_toman"] or 0),
+        "max_filters": int(row["max_filters"] or 1),
+        "max_criteria": None if max_criteria is None else int(max_criteria),
+        "poll_interval_minutes": int(row["poll_interval_minutes"] or 5),
+        "ai_enabled": bool(row["ai_enabled"]),
+        "api_access": bool(row["api_access"]),
+        "duration_days": int(row["duration_days"] or 30),
+        "features": [str(x) for x in features],
+        "sort_order": int(row["sort_order"] or 0),
+        "active": bool(row["active"]),
+        "updated_at": row["updated_at"] or "",
+    }
+
+
+def list_plan_rows(*, include_inactive: bool = False) -> list[dict[str, Any]]:
+    with _lock:
+        conn = connect()
+        try:
+            if include_inactive:
+                rows = conn.execute(
+                    "SELECT * FROM plans ORDER BY sort_order ASC, name ASC"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM plans WHERE active = 1 ORDER BY sort_order ASC, name ASC"
+                ).fetchall()
+            return [_plan_from_row(row) for row in rows]  # type: ignore[misc]
+        finally:
+            conn.close()
+
+
+def get_plan_row(plan_id: str) -> dict[str, Any] | None:
+    key = str(plan_id or "").strip().lower()
+    if not key:
+        return None
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute("SELECT * FROM plans WHERE id = ?", (key,)).fetchone()
+            return _plan_from_row(row)
+        finally:
+            conn.close()
+
+
+def upsert_plan(body: dict[str, Any], *, create: bool = False) -> dict[str, Any]:
+    plan_id = str(body.get("id") or "").strip().lower()
+    if not re.fullmatch(r"[a-z][a-z0-9_]{1,31}", plan_id or ""):
+        raise AppError("شناسه پلن باید انگلیسی کوچک، عدد و _ باشد (۲ تا ۳۲ کاراکتر).")
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise AppError("نام پلن الزامی است.")
+    features = body.get("features")
+    if isinstance(features, str):
+        features = [line.strip() for line in features.splitlines() if line.strip()]
+    if not isinstance(features, list):
+        features = []
+    features = [str(x).strip() for x in features if str(x).strip()]
+    max_criteria_raw = body.get("max_criteria")
+    if max_criteria_raw in (None, "", "null"):
+        max_criteria = None
+    else:
+        max_criteria = max(0, min(int(max_criteria_raw), 50))
+    now = _now()
+    values = (
+        name,
+        str(body.get("tagline") or "").strip(),
+        max(0, int(body.get("price_toman") or 0)),
+        max(0, min(int(body.get("max_filters") or 1), 100)),
+        max_criteria,
+        max(1, min(int(body.get("poll_interval_minutes") or 5), 1440)),
+        1 if body.get("ai_enabled") else 0,
+        1 if body.get("api_access") else 0,
+        max(1, min(int(body.get("duration_days") or 30), 3650)),
+        json.dumps(features, ensure_ascii=False),
+        int(body.get("sort_order") or 0),
+        1 if body.get("active", True) else 0,
+        now,
+        plan_id,
+    )
+    with _lock:
+        conn = connect()
+        try:
+            existing = conn.execute("SELECT id FROM plans WHERE id = ?", (plan_id,)).fetchone()
+            if create and existing:
+                raise AppError("این شناسه پلن از قبل هست.")
+            if not existing and not create:
+                # allow upsert from editor even if missing
+                pass
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE plans SET
+                        name=?, tagline=?, price_toman=?, max_filters=?, max_criteria=?,
+                        poll_interval_minutes=?, ai_enabled=?, api_access=?, duration_days=?,
+                        features_json=?, sort_order=?, active=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    values,
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO plans (
+                        name, tagline, price_toman, max_filters, max_criteria,
+                        poll_interval_minutes, ai_enabled, api_access, duration_days,
+                        features_json, sort_order, active, updated_at, id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    values,
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    plan = get_plan_row(plan_id)
+    assert plan
+    return plan
+
+
+def delete_plan(plan_id: str) -> None:
+    key = str(plan_id or "").strip().lower()
+    if key in {"trial", "basic", "pro"}:
+        raise AppError("پلن‌های پیش‌فرض را حذف نکنید؛ می‌توانید غیرفعال یا ویرایش کنید.")
+    with _lock:
+        conn = connect()
+        try:
+            used = conn.execute(
+                "SELECT COUNT(*) AS c FROM users WHERE plan_id = ?", (key,)
+            ).fetchone()
+            if used and int(used["c"] or 0) > 0:
+                raise AppError("این پلن روی مشتری‌ها ست است؛ اول پلن‌شان را عوض کنید.")
+            cur = conn.execute("DELETE FROM plans WHERE id = ?", (key,))
+            if cur.rowcount == 0:
+                raise AppError("پلن پیدا نشد.")
+            conn.commit()
         finally:
             conn.close()
