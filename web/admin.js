@@ -29,11 +29,11 @@ function renderUsers() {
     row.innerHTML = `
       <div class="user-summary-main">
         <strong>@${user.login_username || user.telegram_username}</strong>
-        <span class="meta">${user.display_name || "—"} · ${user.filter_count || 0} فیلتر</span>
+        <span class="meta">${user.display_name || "—"} · ${user.filter_count || 0} فیلتر · ${user.plan_name || user.plan_id || "—"}</span>
       </div>
       <div class="user-summary-side">
         <span class="pill ${user.linked ? "ok" : "warn"}">${user.linked ? "متصل" : "منتظر"}</span>
-        <span class="pill ${user.active ? "ok" : ""}">${user.active ? "فعال" : "غیرفعال"}</span>
+        <span class="pill ${user.subscription_status === "expired" ? "warn" : user.active ? "ok" : ""}">${user.subscription_status || (user.active ? "فعال" : "غیرفعال")}</span>
         <span class="slot-chip">${interval}د / پایه ${offset}</span>
       </div>
     `;

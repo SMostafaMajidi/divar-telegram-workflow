@@ -1,10 +1,14 @@
-const state = { user: null, filters: [], chats: [] };
+const state = { user: null, filters: [], chats: [], plans: [] };
 const userId = location.pathname.split("/").filter(Boolean).pop();
 
 const els = {
   title: $("#page-title"),
   head: $("#user-head"),
   profile: $("#profile-form"),
+  plan: $("#plan-form"),
+  planStatus: $("#plan-status"),
+  planId: $("#plan-id"),
+  saveExpiry: $("#save-expiry-btn"),
   poll: $("#poll-form"),
   route: $("#route-form"),
   routeFilter: $("#route-filter"),
@@ -23,6 +27,24 @@ function chatLabel(chat) {
   const kind = kinds[chat.type] || "";
   const name = chat.name || (chat.username ? `@${chat.username}` : chat.id);
   return kind ? `${name} · ${kind}` : String(name);
+}
+
+function toDateInput(iso) {
+  const raw = String(iso || "").trim();
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw.slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fromDateInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  // End of selected day in Iran time (UTC+3:30)
+  return `${raw}T23:59:59+03:30`;
 }
 
 function fillSelect(select, items, { valueKey = "id", labelFn, emptyLabel, selected, skipIds = [] } = {}) {
@@ -101,12 +123,24 @@ function render() {
       <div class="row">
         <span class="pill ${user.linked ? "ok" : "warn"}">${user.linked ? "متصل" : "منتظر ربات"}</span>
         <span class="pill ${user.active ? "ok" : ""}">${user.active ? "فعال" : "غیرفعال"}</span>
+        <span class="pill ${user.subscription_status === "expired" ? "warn" : "ok"}">${user.plan_name || user.plan_id || "—"} · ${user.subscription_status || "—"}</span>
       </div>
     </div>
   `;
   els.profile.display_name.value = user.display_name || "";
   els.profile.ai_enabled.checked = !!user.ai_enabled;
   els.profile.active.checked = !!user.active;
+  if (els.plan) {
+    fillSelect(els.planId, state.plans, {
+      labelFn: (p) => `${p.name} — تا ${p.max_filters} فیلتر`,
+      selected: user.plan_id || "trial",
+    });
+    els.plan.max_filters.value = user.max_filters ?? "";
+    els.plan.expires_at.value = toDateInput(user.expires_at);
+    els.planStatus.textContent =
+      `وضعیت: ${user.subscription_status || "—"} · سقف مؤثر: ${user.effective_max_filters ?? "—"} فیلتر` +
+      (user.expires_at ? ` · انقضا: ${toDateInput(user.expires_at)}` : "");
+  }
   els.poll.poll_interval_minutes.value =
     user.poll_interval_minutes ?? user.effective_poll_interval_minutes ?? 5;
   els.poll.poll_offset_minutes.value = user.poll_offset_minutes ?? user.effective_poll_offset_minutes ?? 0;
@@ -145,6 +179,45 @@ els.profile.addEventListener("submit", async (e) => {
     toast(err.message, "err");
   }
 });
+
+if (els.plan) {
+  els.plan.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const data = await api(`/api/admin/users/${userId}`, {
+        method: "PUT",
+        body: {
+          apply_plan: true,
+          plan_id: els.planId.value || "trial",
+          renew: els.plan.renew.checked,
+          apply_limits: els.plan.apply_limits.checked,
+          expires_at: els.plan.renew.checked ? undefined : fromDateInput(els.plan.expires_at.value),
+        },
+      });
+      state.user = data.user;
+      render();
+      toast("پلن اعمال شد", "ok");
+    } catch (err) {
+      toast(err.message, "err");
+    }
+  });
+  els.saveExpiry.onclick = async () => {
+    try {
+      const data = await api(`/api/admin/users/${userId}`, {
+        method: "PUT",
+        body: {
+          max_filters: optionalNumber(els.plan.max_filters.value),
+          expires_at: fromDateInput(els.plan.expires_at.value),
+        },
+      });
+      state.user = data.user;
+      render();
+      toast("سقف/انقضا ذخیره شد", "ok");
+    } catch (err) {
+      toast(err.message, "err");
+    }
+  };
+}
 
 els.poll.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -259,8 +332,12 @@ async function boot() {
     return;
   }
   try {
-    const data = await api(`/api/admin/users/${userId}`);
+    const [data, plans] = await Promise.all([
+      api(`/api/admin/users/${userId}`),
+      fetch("/api/plans").then((r) => r.json()),
+    ]);
     state.user = data.user;
+    state.plans = plans.plans || [];
     await loadRoutes();
     render();
   } catch (err) {

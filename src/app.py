@@ -109,6 +109,7 @@ class Handler(BaseHTTPRequestHandler):
             "/admin",
             "/admin/login",
             "/admin/settings",
+            "/pricing",
             "/app",
             "/app/login",
             "/app/access",
@@ -178,6 +179,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 return self._file(WEB_DIR / "admin-settings.html")
+            if path == "/pricing":
+                return self._file(WEB_DIR / "pricing.html")
             if path.startswith("/admin/users/"):
                 if not self._admin_logged_in():
                     self.send_response(302)
@@ -248,6 +251,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/cities":
                 q = (query.get("q") or [""])[0]
                 return self._json({"cities": get_client().search_cities(q)})
+            if path == "/api/plans":
+                from plans import list_plans
+
+                return self._json({"plans": list_plans()})
             if path == "/api/categories":
                 return self._json(category_payload())
             if path == "/api/divar-filters":
@@ -502,6 +509,22 @@ class Handler(BaseHTTPRequestHandler):
             fields["poll_offset_minutes"] = body.get("poll_offset_minutes")
         if "best_count" in body:
             fields["best_count"] = body.get("best_count")
+        if "plan_id" in body:
+            fields["plan_id"] = body.get("plan_id")
+        if "max_filters" in body:
+            fields["max_filters"] = body.get("max_filters")
+        if "expires_at" in body:
+            fields["expires_at"] = body.get("expires_at")
+        if body.get("apply_plan"):
+            return _admin_user(
+                db.apply_subscription(
+                    user_id,
+                    str(body.get("plan_id") or "trial"),
+                    renew=bool(body.get("renew", True)),
+                    expires_at=body.get("expires_at") if "expires_at" in body else None,
+                    apply_limits=bool(body.get("apply_limits", True)),
+                )
+            )
         user = db.update_user(user_id, **fields)
         return _admin_user(user)
 
@@ -677,6 +700,12 @@ def _safe_user(user: dict) -> dict:
         or user.get("login_username")
         or user.get("telegram_username")
         or "",
+        "plan_id": user.get("plan_id") or "trial",
+        "plan_name": user.get("plan_name") or "",
+        "max_filters": user.get("effective_max_filters"),
+        "expires_at": user.get("expires_at") or "",
+        "subscription_status": user.get("subscription_status") or "",
+        "telegram_chat_id": user.get("telegram_chat_id") or "",
     }
 
 

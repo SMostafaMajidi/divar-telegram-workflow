@@ -124,9 +124,29 @@ def init_db(path: Path = DB_PATH) -> None:
                 )
             if "best_count" not in cols:
                 conn.execute("ALTER TABLE users ADD COLUMN best_count INTEGER")
+            if "plan_id" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN plan_id TEXT NOT NULL DEFAULT 'trial'")
+            if "max_filters" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN max_filters INTEGER")
+            if "expires_at" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN expires_at TEXT")
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_login ON users(login_username) "
                 "WHERE login_username IS NOT NULL AND login_username != ''"
+            )
+            # Ensure user_chats exists for older DBs
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_chats (
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    chat_id TEXT NOT NULL,
+                    chat_type TEXT,
+                    name TEXT,
+                    username TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, chat_id)
+                )
+                """
             )
             conn.commit()
         finally:
@@ -200,11 +220,16 @@ def _clamp_best_count(value: Any) -> int | None:
 
 
 def _user_public(row: dict[str, Any]) -> dict[str, Any]:
+    from plans import effective_max_filters, get_plan, subscription_status
+
     login = (row.get("login_username") or "").strip()
     tg = row.get("telegram_username") or ""
     interval = _clamp_poll_interval(row.get("poll_interval_minutes"))
     offset = _clamp_poll_offset(row.get("poll_offset_minutes"), interval)
-    return {
+    plan_id = str(row.get("plan_id") or "trial")
+    plan = get_plan(plan_id)
+    max_filters = row.get("max_filters")
+    user = {
         "id": row["id"],
         "telegram_username": tg,
         "login_username": login,
@@ -220,7 +245,14 @@ def _user_public(row: dict[str, Any]) -> dict[str, Any]:
         "poll_interval_minutes": interval,
         "poll_offset_minutes": offset,
         "best_count": _clamp_best_count(row.get("best_count")),
+        "plan_id": plan_id,
+        "plan_name": plan.get("name") or plan_id,
+        "max_filters": int(max_filters) if max_filters is not None else None,
+        "expires_at": row.get("expires_at") or "",
     }
+    user["effective_max_filters"] = effective_max_filters(user)
+    user["subscription_status"] = subscription_status(user)
+    return user
 
 
 def create_user(
@@ -231,12 +263,17 @@ def create_user(
     active: bool = True,
     login_username: str = "",
     password: str = "",
+    plan_id: str = "trial",
 ) -> dict[str, Any]:
+    from plans import get_plan, plan_expiry_iso
+
     username = normalize_username(telegram_username)
     login = normalize_login_username(login_username) if login_username else ""
     password_hash = hash_password(password) if password else None
     user_id = uuid.uuid4().hex[:12]
     api_key = new_api_key()
+    plan = get_plan(plan_id)
+    expires_at = plan_expiry_iso(plan["id"])
     with _lock:
         conn = connect()
         try:
@@ -254,19 +291,24 @@ def create_user(
             conn.execute(
                 """
                 INSERT INTO users
-                (id, telegram_username, telegram_chat_id, display_name, api_key, ai_enabled, active, created_at, login_username, password_hash)
-                VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)
+                (id, telegram_username, telegram_chat_id, display_name, api_key, ai_enabled, active, created_at,
+                 login_username, password_hash, plan_id, max_filters, poll_interval_minutes, expires_at)
+                VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
                     username,
                     display_name.strip() or login or username,
                     api_key,
-                    1 if ai_enabled else 0,
+                    1 if (ai_enabled or plan.get("ai_enabled")) else 0,
                     1 if active else 0,
                     _now(),
                     login or None,
                     password_hash,
+                    plan["id"],
+                    int(plan["max_filters"]),
+                    int(plan["poll_interval_minutes"]),
+                    expires_at,
                 ),
             )
             conn.commit()
@@ -331,11 +373,15 @@ def register_from_telegram(
                 tg = f"{login}_{uuid.uuid4().hex[:4]}"
 
             user_id = uuid.uuid4().hex[:12]
+            from plans import get_plan, plan_expiry_iso
+
+            plan = get_plan("trial")
             conn.execute(
                 """
                 INSERT INTO users
-                (id, telegram_username, telegram_chat_id, display_name, api_key, ai_enabled, active, created_at, login_username, password_hash)
-                VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?, ?)
+                (id, telegram_username, telegram_chat_id, display_name, api_key, ai_enabled, active, created_at,
+                 login_username, password_hash, plan_id, max_filters, poll_interval_minutes, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -343,9 +389,14 @@ def register_from_telegram(
                     chat_id,
                     display_name.strip() or login,
                     new_api_key(),
+                    1 if plan.get("ai_enabled") else 0,
                     _now(),
                     login,
                     password_hash,
+                    plan["id"],
+                    int(plan["max_filters"]),
+                    int(plan["poll_interval_minutes"]),
+                    plan_expiry_iso(plan["id"]),
                 ),
             )
             conn.commit()
@@ -494,6 +545,16 @@ def update_user(user_id: str, **fields: Any) -> dict[str, Any]:
         fields["poll_interval_minutes"] = _clamp_poll_interval(fields["poll_interval_minutes"])
     if "best_count" in fields:
         fields["best_count"] = _clamp_best_count(fields["best_count"])
+    if "max_filters" in fields:
+        raw = fields["max_filters"]
+        fields["max_filters"] = None if raw in (None, "") else max(0, min(int(raw), 100))
+    if "plan_id" in fields:
+        from plans import get_plan
+
+        fields["plan_id"] = get_plan(fields.get("plan_id"))["id"]
+    if "expires_at" in fields:
+        raw = str(fields.get("expires_at") or "").strip()
+        fields["expires_at"] = raw or None
     if "poll_offset_minutes" in fields or "poll_interval_minutes" in fields:
         from config_store import poll_interval_minutes as default_poll_interval_minutes
 
@@ -521,6 +582,9 @@ def update_user(user_id: str, **fields: Any) -> dict[str, Any]:
         "poll_interval_minutes",
         "poll_offset_minutes",
         "best_count",
+        "plan_id",
+        "max_filters",
+        "expires_at",
     }
     updates: list[str] = []
     values: list[Any] = []
@@ -926,8 +990,42 @@ def get_filter(filter_id: str, user_id: str | None = None) -> dict[str, Any] | N
             conn.close()
 
 
+def apply_subscription(
+    user_id: str,
+    plan_id: str,
+    *,
+    renew: bool = True,
+    expires_at: str | None = None,
+    apply_limits: bool = True,
+) -> dict[str, Any]:
+    from plans import get_plan, parse_expires_at, plan_expiry_iso
+
+    plan = get_plan(plan_id)
+    fields: dict[str, Any] = {"plan_id": plan["id"], "active": True}
+    if apply_limits:
+        fields["max_filters"] = int(plan["max_filters"])
+        fields["poll_interval_minutes"] = int(plan["poll_interval_minutes"])
+        fields["ai_enabled"] = bool(plan.get("ai_enabled"))
+    if expires_at is not None:
+        fields["expires_at"] = str(expires_at).strip() or None
+    elif renew:
+        current = get_user(user_id)
+        now = datetime.now(timezone.utc)
+        current_exp = parse_expires_at((current or {}).get("expires_at"))
+        base = current_exp if current_exp and current_exp > now else now
+        fields["expires_at"] = plan_expiry_iso(plan["id"], from_when=base)
+    return update_user(user_id, **fields)
+
+
 def upsert_filter(user_id: str, spec: dict[str, Any]) -> dict[str, Any]:
+    from plans import effective_max_filters, subscription_ok
+
     filter_id = str(spec.get("id") or uuid.uuid4().hex[:10])
+    user = get_user(user_id)
+    if not user:
+        raise AppError("User not found.")
+    if not subscription_ok(user):
+        raise AppError("اشتراک منقضی یا غیرفعال است. با پشتیبانی هماهنگ کنید.")
     with _lock:
         conn = connect()
         try:
@@ -935,6 +1033,15 @@ def upsert_filter(user_id: str, spec: dict[str, Any]) -> dict[str, Any]:
                 "SELECT id FROM filters WHERE id = ? AND user_id = ?",
                 (filter_id, user_id),
             ).fetchone()
+            if existing is None:
+                count = conn.execute(
+                    "SELECT COUNT(*) AS c FROM filters WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+                used = int(count["c"] if count else 0)
+                limit = effective_max_filters(user)
+                if used >= limit:
+                    raise AppError(f"سقف پلن شما {limit} فیلتر است. برای افزایش پلن با پشتیبانی هماهنگ کنید.")
             values = (
                 spec["name"],
                 1 if spec.get("enabled", True) else 0,
@@ -1118,9 +1225,13 @@ def list_cached_listings(
 
 
 def active_users_with_filters() -> list[dict[str, Any]]:
+    from plans import subscription_ok
+
     result = []
     for user in list_users():
         if not user["active"] or not user["linked"]:
+            continue
+        if not subscription_ok(user):
             continue
         filters = list_filters(user["id"], enabled_only=True)
         if filters:

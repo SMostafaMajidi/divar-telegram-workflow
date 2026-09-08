@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>مشتری — ادمین</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark1">
+  <link rel="stylesheet" href="/styles.css?v=dark2">
 </head>
 <body>
   <header class="topbar">
@@ -38,6 +38,32 @@
           حساب فعال
         </label>
         <button class="primary small" type="submit">ذخیره اطلاعات</button>
+      </form>
+
+      <form id="plan-form" class="settings">
+        <h3>اشتراک و پلن</h3>
+        <p id="plan-status" class="meta"></p>
+        <label>پلن
+          <select name="plan_id" id="plan-id"></select>
+        </label>
+        <label>سقف فیلتر (خالی = از پلن)
+          <input name="max_filters" type="number" min="0" max="100" placeholder="مثلاً ۳">
+        </label>
+        <label>تاریخ انقضا
+          <input name="expires_at" type="date">
+        </label>
+        <label class="check">
+          <input name="apply_limits" type="checkbox" checked>
+          با اعمال پلن، سقف/فاصله/AI هم ست شود
+        </label>
+        <label class="check">
+          <input name="renew" type="checkbox" checked>
+          انقضا را از امروز/انقضای فعلی تمدید کن
+        </label>
+        <div class="row">
+          <button class="primary small" type="submit">اعمال پلن</button>
+          <button id="save-expiry-btn" class="ghost small" type="button">فقط ذخیره سقف/انقضا</button>
+        </div>
       </form>
 
       <form id="poll-form" class="settings">
@@ -88,6 +114,6 @@
     </section>
   </main>
   <script src="/admin-common.js?v=1"></script>
-  <script src="/admin-user.js?v=3"></script>
+  <script src="/admin-user.js?v=5"></script>
 </body>
 </html>

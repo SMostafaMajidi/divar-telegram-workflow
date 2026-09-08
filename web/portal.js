@@ -349,7 +349,13 @@ function renderStatus() {
   els.runBtn.disabled = !state.user.ai_enabled;
   if (els.feedLink) {
     const slug = state.user.public_slug || state.user.login_username || state.user.telegram_username;
-    els.feedLink.innerHTML = `صفحه اختصاصی: <a href="/u/${slug}" target="_blank">/u/${slug}</a>`;
+    const plan = state.user.plan_name || state.user.plan_id || "—";
+    const status = state.user.subscription_status || "—";
+    const max = state.user.max_filters ?? "—";
+    const exp = state.user.expires_at ? state.user.expires_at.slice(0, 10) : "—";
+    els.feedLink.innerHTML =
+      `پلن: <b>${plan}</b> (${status}) · سقف فیلتر: ${max} · انقضا: ${exp}<br>` +
+      `صفحه اختصاصی: <a href="/u/${slug}" target="_blank">/u/${slug}</a>`;
   }
 }
 
