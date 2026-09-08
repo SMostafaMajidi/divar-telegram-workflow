@@ -689,6 +689,81 @@ select[multiple] { min-height: 120px; }
   font-size: 13px;
 }
 
+.topbar-meta {
+  margin: 6px 0 0;
+  max-width: 42ch;
+}
+.portal-guide {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(61, 214, 198, 0.22);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(61, 214, 198, 0.08), rgba(255, 255, 255, 0.02));
+  display: grid;
+  gap: 10px;
+  counter-reset: guide;
+}
+.portal-guide li {
+  position: relative;
+  padding-right: 34px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+  counter-increment: guide;
+}
+.portal-guide li::before {
+  content: counter(guide);
+  position: absolute;
+  right: 0;
+  top: 1px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(61, 214, 198, 0.18);
+  color: var(--accent, #3dd6c6);
+  font-size: 12px;
+  font-weight: 700;
+}
+.portal-guide b { color: var(--ink); font-weight: 700; }
+.empty-state {
+  text-align: center;
+  padding: 36px 18px;
+  border: 1px dashed var(--line);
+  border-radius: 18px;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  background: rgba(255, 255, 255, 0.02);
+}
+.empty-state h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.empty-state .meta {
+  max-width: 36ch;
+  margin: 0;
+}
+.filter-card .card-top {
+  align-items: start;
+}
+.filter-card .card-top h3 {
+  margin: 0 0 4px;
+}
+.filter-meta {
+  margin: 0 0 12px;
+}
+.portal-foot {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+}
+.portal-foot .meta { margin: 0; }
+
 @media (max-width: 860px) {
   .topbar, .layout { display: block; }
   .top-actions { margin-top: 12px; }

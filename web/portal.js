@@ -55,10 +55,8 @@ const els = {
   apiKey: null,
   feedLink: $("#feed-link"),
   welcome: $("#welcome"),
-  routeForm: $("#route-form"),
-  routeFilter: $("#route-filter"),
-  routeChat: $("#route-chat"),
-  refreshChatsBtn: $("#refresh-chats-btn"),
+  planLine: $("#plan-line"),
+  filterQuota: $("#filter-quota"),
 };
 
 function el(tag, attrs = {}, children = []) {
@@ -140,17 +138,6 @@ function fillChatSelect(select, selected) {
     select.append(el("option", { value: selectedValue, text: selectedValue }));
   }
   select.value = selectedValue || "";
-}
-
-function fillRouteSelects() {
-  if (!els.routeFilter || !els.routeChat) return;
-  els.routeFilter.replaceChildren(
-    el("option", { value: "", text: state.filters.length ? "انتخاب فیلتر" : "فیلتری نیست" })
-  );
-  for (const filter of state.filters) {
-    els.routeFilter.append(el("option", { value: filter.id, text: filter.name || filter.id }));
-  }
-  fillChatSelect(els.routeChat, "");
 }
 
 function findTrail(slug, nodes = state.categoryTree, trail = []) {
@@ -278,13 +265,49 @@ function renderCategoryPicker() {
 function renderFilters() {
   els.list.replaceChildren();
   if (!state.filters.length) {
-    els.list.append(el("p", { class: "empty", text: "هنوز فیلتری ثبت نشده است." }));
+    els.list.append(
+      el("div", { class: "empty-state" }, [
+        el("h3", { text: "هنوز فیلتری نداری" }),
+        el("p", {
+          class: "meta",
+          text: "با یک فیلتر شروع کن؛ از این به بعد آگهی‌های تازه همان شرایط به تلگرام می‌آید.",
+        }),
+        el("button", {
+          class: "primary",
+          type: "button",
+          text: "ساخت اولین فیلتر",
+          onClick: () => openEditor(),
+        }),
+      ]),
+    );
     return;
   }
   for (const filter of state.filters) {
-    const card = el("article", { class: `card ${filter.enabled ? "" : "off"}` }, [
+    const chatSelect = el("select");
+    fillChatSelect(chatSelect, filter.chat_id);
+    chatSelect.addEventListener("change", async () => {
+      try {
+        const data = await api(`/api/filters/${filter.id}/chat`, {
+          method: "POST",
+          body: { chat_id: chatSelect.value || "" },
+        });
+        replaceFilter(data.filter);
+        toast("مقصد ذخیره شد", "ok");
+      } catch (err) {
+        toast(err.message, "err");
+        fillChatSelect(chatSelect, filter.chat_id);
+      }
+    });
+
+    const card = el("article", { class: `card filter-card ${filter.enabled ? "" : "off"}` }, [
       el("div", { class: "card-top" }, [
-        el("h3", { text: filter.name }),
+        el("div", {}, [
+          el("h3", { text: filter.name }),
+          el("p", {
+            class: "meta",
+            text: `${filter.category_path || filter.category} · ${filter.cities.join("، ") || "بدون شهر"}`,
+          }),
+        ]),
         el("label", { class: "check" }, [
           el("input", {
             type: "checkbox",
@@ -305,9 +328,10 @@ function renderFilters() {
         ]),
       ]),
       el("p", {
-        class: "meta",
-        text: `${filter.category_path || filter.category} · ${filter.query || "بدون عبارت"} · ${filter.cities.join("، ")} · ${priceText(filter)} · مقصد: ${chatNameFor(filter.chat_id)}`,
+        class: "meta filter-meta",
+        text: `${filter.query ? `جستجو: ${filter.query} · ` : ""}${priceText(filter)}`,
       }),
+      el("label", { class: "chat-target" }, ["ارسال آگهی به", chatSelect]),
       el("div", { class: "card-actions" }, [
         el("button", {
           class: "ghost small",
@@ -338,24 +362,39 @@ function replaceFilter(updated) {
   if (index >= 0) state.filters[index] = updated;
   else state.filters.push(updated);
   renderFilters();
-  fillRouteSelects();
 }
 
 function renderStatus() {
   if (!state.user) return;
-  els.welcome.textContent = `@${state.user.login_username || state.user.telegram_username}`;
-  els.aiPill.textContent = state.user.ai_enabled ? "هوش مصنوعی فعال" : "هوش مصنوعی غیرفعال";
-  els.aiPill.className = `pill ${state.user.ai_enabled ? "ok" : "warn"}`;
-  els.runBtn.disabled = !state.user.ai_enabled;
+  const name = state.user.login_username || state.user.telegram_username || "حساب من";
+  els.welcome.textContent = `@${name}`;
+  const plan = state.user.plan_name || state.user.plan_id || "—";
+  const status = state.user.subscription_status || "—";
+  const max = state.user.max_filters;
+  const used = state.filters.length;
+  const exp = state.user.expires_at ? state.user.expires_at.slice(0, 10) : null;
+  if (els.planLine) {
+    els.planLine.textContent = exp
+      ? `پلن ${plan} · ${status} · تا ${exp}`
+      : `پلن ${plan} · ${status}`;
+  }
+  if (els.filterQuota) {
+    els.filterQuota.textContent =
+      max != null ? `${used} از ${max} فیلتر` : `${used} فیلتر`;
+  }
+  const aiOn = !!state.user.ai_enabled;
+  if (els.aiPill) {
+    els.aiPill.hidden = !aiOn;
+    els.aiPill.textContent = "هوش مصنوعی فعال";
+    els.aiPill.className = "pill ok";
+  }
+  if (els.runBtn) {
+    els.runBtn.hidden = !aiOn;
+    els.runBtn.disabled = !aiOn;
+  }
   if (els.feedLink) {
     const slug = state.user.public_slug || state.user.login_username || state.user.telegram_username;
-    const plan = state.user.plan_name || state.user.plan_id || "—";
-    const status = state.user.subscription_status || "—";
-    const max = state.user.max_filters ?? "—";
-    const exp = state.user.expires_at ? state.user.expires_at.slice(0, 10) : "—";
-    els.feedLink.innerHTML =
-      `پلن: <b>${plan}</b> (${status}) · سقف فیلتر: ${max} · انقضا: ${exp}<br>` +
-      `صفحه اختصاصی: <a href="/u/${slug}" target="_blank">/u/${slug}</a>`;
+    els.feedLink.innerHTML = `صفحه اختصاصی: <a href="/u/${slug}" target="_blank">/u/${slug}</a>`;
   }
 }
 
@@ -814,7 +853,7 @@ async function loadFeed() {
 async function loadChats() {
   const data = await api("/api/chats");
   state.chats = data.chats || [];
-  fillRouteSelects();
+  renderFilters();
 }
 
 async function boot() {
@@ -830,53 +869,12 @@ async function boot() {
     state.chats = chats.chats || [];
     state.categoryTree = categories.tree || [];
     state.categoryFlat = categories.flat || [];
-    renderFilters();
-    fillRouteSelects();
     renderStatus();
+    renderFilters();
     await loadFeed();
   } catch (err) {
     location.replace("/");
   }
-}
-
-if (els.routeForm) {
-  els.routeForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const filterId = els.routeFilter.value;
-    if (!filterId) {
-      toast("یک فیلتر انتخاب کنید", "err");
-      return;
-    }
-    try {
-      const data = await api(`/api/filters/${filterId}/chat`, {
-        method: "POST",
-        body: { chat_id: els.routeChat.value || "" },
-      });
-      replaceFilter(data.filter);
-      toast("مقصد فیلتر ذخیره شد", "ok");
-    } catch (err) {
-      toast(err.message, "err");
-    }
-  });
-  els.routeFilter.addEventListener("change", () => {
-    const filter = state.filters.find((f) => f.id === els.routeFilter.value);
-    fillChatSelect(els.routeChat, filter?.chat_id || "");
-  });
-}
-
-if (els.refreshChatsBtn) {
-  els.refreshChatsBtn.addEventListener("click", async () => {
-    els.refreshChatsBtn.disabled = true;
-    try {
-      await loadChats();
-      renderFilters();
-      toast(state.chats.length ? `${state.chats.length} چت` : "چتی نیست؛ در ربات یا گروه پیام بفرستید", "ok");
-    } catch (err) {
-      toast(err.message, "err");
-    } finally {
-      els.refreshChatsBtn.disabled = false;
-    }
-  });
 }
 
 boot();

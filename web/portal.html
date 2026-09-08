@@ -5,55 +5,56 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>پنل مشتری — دیوار واچر</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark1">
+  <link rel="stylesheet" href="/styles.css?v=dark3">
 </head>
 <body>
   <header class="topbar">
     <div>
       <p class="eyebrow">پنل مشتری</p>
-      <h1 id="welcome">فیلترها و آگهی‌ها</h1>
+      <h1 id="welcome">حساب من</h1>
+      <p id="plan-line" class="meta topbar-meta"></p>
     </div>
     <div class="top-actions">
-      <span id="ai-pill" class="pill">هوش مصنوعی</span>
-      <button id="run-btn" class="primary" type="button">ارسال بهترین‌ها</button>
+      <span id="ai-pill" class="pill" hidden>هوش مصنوعی</span>
+      <button id="run-btn" class="ghost small" type="button" hidden>ارسال بهترین‌ها</button>
       <button id="logout-btn" class="ghost" type="button">خروج</button>
     </div>
   </header>
-  <main class="layout">
+
+  <main class="layout portal-layout">
     <section class="panel filters-panel">
+      <div id="toast" class="toast" hidden></div>
+
+      <ol class="portal-guide">
+        <li><b>فیلتر بساز</b> — دسته، شهر و شرایط آگهی را مشخص کن.</li>
+        <li><b>مقصد را انتخاب کن</b> — آگهی‌ها به چت شخصی یا گروه/کانال بروند.</li>
+        <li><b>فعال بگذار</b> — پایش خودکار آگهی تازه را می‌فرستد.</li>
+      </ol>
+
       <div class="panel-head">
-        <h2>فیلترها</h2>
+        <div>
+          <h2>فیلترهای من</h2>
+          <p id="filter-quota" class="meta" style="margin:4px 0 0"></p>
+        </div>
         <button id="add-btn" class="primary small" type="button">افزودن فیلتر</button>
       </div>
-      <p class="hint">دسته را انتخاب کنید؛ فیلدهای همان دسته از دیوار بارگذاری می‌شود.</p>
-
-      <form id="route-form" class="settings route-box">
-        <h3>اتصال فیلتر به چت</h3>
-        <p class="meta">برای دیدن گروه/کانال: ربات را عضو کنید و یک پیام بفرستید، بعد تازه‌سازی بزنید.</p>
-        <label>فیلتر
-          <select id="route-filter" name="filter_id"></select>
-        </label>
-        <label>چت مقصد
-          <select id="route-chat" name="chat_id"></select>
-        </label>
-        <div class="row">
-          <button class="primary small" type="submit">ذخیره مقصد</button>
-          <button id="refresh-chats-btn" class="ghost small" type="button">تازه‌سازی چت‌ها</button>
-        </div>
-      </form>
 
       <div id="filter-list" class="filter-list"></div>
-      <div class="settings">
+
+      <div class="portal-foot">
         <p id="feed-link" class="meta"></p>
-        <p class="meta"><a href="/app/api">مستندات API</a></p>
+        <p class="meta"><a href="/app/api">مستندات API</a> · <a href="/pricing">پلن‌ها</a></p>
       </div>
     </section>
+
     <section class="panel results-panel">
       <div class="panel-head">
-        <h2 id="results-title">آگهی‌های اخیر</h2>
+        <div>
+          <h2 id="results-title">آگهی‌های اخیر</h2>
+          <p class="meta" style="margin:4px 0 0">همان‌هایی که به تلگرام هم رفته‌اند</p>
+        </div>
         <span id="results-meta" class="muted"></span>
       </div>
-      <div id="toast" class="toast" hidden></div>
       <div id="results" class="results"></div>
     </section>
   </main>
@@ -95,7 +96,7 @@
       <label>مقصد تلگرام
         <select name="chat_id" id="filter-chat"></select>
       </label>
-      <p class="hint">خالی = چت شخصی. برای گروه/کانال ربات را ادمین کنید و یک پیام بفرستید.</p>
+      <p class="hint">پیش‌فرض = چت شخصی. برای گروه/کانال ربات را ادمین کنید و یک پیام بفرستید.</p>
       <div class="row">
         <label>تعداد صفحات دیوار
           <input name="max_pages" type="number" min="1" max="8" value="3">
@@ -111,6 +112,6 @@
       </footer>
     </form>
   </dialog>
-  <script src="/portal.js?v=4"></script>
+  <script src="/portal.js?v=5"></script>
 </body>
 </html>
