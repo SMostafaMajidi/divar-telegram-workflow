@@ -72,16 +72,17 @@ class Watcher:
             users = self._watchable_users()
             due, wait, when = next_due_watch_users(users, include_now=include_now)
             include_now = False
-            if wait > 0:
+            if wait > 0.5:
                 self.next_run_at = format_slot_time(when)
                 self.last_message = f"Next scan at {self.next_run_at}."
-                if self._stop.wait(wait):
+                # Sleep in short chunks so admin poll changes take effect soon.
+                chunk = min(float(wait), 15.0)
+                if self._stop.wait(chunk):
                     break
-                # Recompute who is due after sleep in case settings changed.
-                users = self._watchable_users()
-                due, _, when = next_due_watch_users(users, include_now=True)
+                continue
             if not due:
-                self.next_run_at = format_slot_time(when) if when else ""
+                if self._stop.wait(5.0):
+                    break
                 continue
             try:
                 result = watch_tick(user_ids=[user["id"] for user in due])
@@ -90,6 +91,9 @@ class Watcher:
                 self.last_message = str(exc)
             _, _, next_when = next_due_watch_users(self._watchable_users(), include_now=False)
             self.next_run_at = format_slot_time(next_when) if next_when else ""
+            # Avoid double-firing the same second.
+            if self._stop.wait(1.0):
+                break
 
 
 WATCHER = Watcher()
@@ -104,6 +108,7 @@ class Handler(BaseHTTPRequestHandler):
             "/",
             "/admin",
             "/admin/login",
+            "/admin/settings",
             "/app",
             "/app/login",
             "/app/access",
@@ -111,12 +116,15 @@ class Handler(BaseHTTPRequestHandler):
             "/styles.css",
             "/app.js",
             "/admin.js",
+            "/admin-common.js",
+            "/admin-settings.js",
+            "/admin-user.js",
             "/admin-login.js",
             "/app-login.js",
             "/app-api.js",
             "/portal.js",
             "/feed.js",
-        } or path.startswith("/u/"):
+        } or path.startswith("/u/") or path.startswith("/admin/users/"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
@@ -163,6 +171,20 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 return self._file(WEB_DIR / "admin.html")
+            if path == "/admin/settings":
+                if not self._admin_logged_in():
+                    self.send_response(302)
+                    self.send_header("Location", "/admin/login")
+                    self.end_headers()
+                    return
+                return self._file(WEB_DIR / "admin-settings.html")
+            if path.startswith("/admin/users/"):
+                if not self._admin_logged_in():
+                    self.send_response(302)
+                    self.send_header("Location", "/admin/login")
+                    self.end_headers()
+                    return
+                return self._file(WEB_DIR / "admin-user.html")
             if path == "/app":
                 if not self._cookie("session") or not db.get_session_user(self._cookie("session")):
                     self.send_response(302)
@@ -204,6 +226,9 @@ class Handler(BaseHTTPRequestHandler):
                 "/styles.css",
                 "/app.js",
                 "/admin.js",
+                "/admin-common.js",
+                "/admin-settings.js",
+                "/admin-user.js",
                 "/admin-login.js",
                 "/app-login.js",
                 "/app-api.js",
@@ -232,6 +257,15 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/admin/users":
                 self._require_admin()
                 return self._json({"users": [_admin_user(user) for user in db.list_users()]})
+            if path.startswith("/api/admin/users/"):
+                self._require_admin()
+                user_id = path.rsplit("/", 1)[-1]
+                if user_id in {"", "rotate-key"}:
+                    raise AppError("User not found.")
+                found = db.get_user(user_id)
+                if not found:
+                    raise AppError("User not found.")
+                return self._json({"user": _admin_user(found)})
             if path == "/api/me":
                 user = self._require_user()
                 return self._json({"user": _safe_user(user)})
@@ -405,6 +439,13 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
         try:
+            if path.startswith("/api/admin/users/"):
+                self._require_admin()
+                user_id = path.rsplit("/", 1)[-1]
+                if not user_id or user_id == "users":
+                    raise AppError("User not found.")
+                db.delete_user(user_id)
+                return self._json({"ok": True})
             if path.startswith("/api/filters/"):
                 user = self._require_user()
                 db.delete_filter(path.rsplit("/", 1)[-1], user["id"])
@@ -586,6 +627,7 @@ def _admin_user(user: dict) -> dict:
         "slot_preview": slot_preview_minutes(interval, offset),
         "default_poll_interval_minutes": poll_interval_minutes(config),
         "default_best_count": user_best_count(None, config),
+        "filter_count": db.user_filter_count(user["id"]),
     }
 
 

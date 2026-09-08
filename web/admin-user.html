@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>مشتری — ادمین</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ادمین</p>
+      <h1 id="page-title">مشتری</h1>
+    </div>
+    <div class="top-actions">
+      <a class="ghost small" href="/admin">بازگشت</a>
+      <a class="ghost small" href="/admin/settings">تنظیمات عمومی</a>
+      <button id="logout-btn" class="ghost" type="button">خروج</button>
+    </div>
+  </header>
+  <main class="layout single">
+    <section class="panel narrow-panel">
+      <p id="toast" class="toast" hidden></p>
+      <div id="user-head" class="user-detail-head"></div>
+
+      <form id="profile-form" class="settings">
+        <h3>اطلاعات حساب</h3>
+        <label>نام نمایشی
+          <input name="display_name" type="text">
+        </label>
+        <label class="check">
+          <input name="ai_enabled" type="checkbox">
+          رتبه‌بندی هوشمند
+        </label>
+        <label class="check">
+          <input name="active" type="checkbox">
+          حساب فعال
+        </label>
+        <button class="primary small" type="submit">ذخیره اطلاعات</button>
+      </form>
+
+      <form id="poll-form" class="settings">
+        <h3>تنظیم پایش</h3>
+        <label>فاصله پایش (دقیقه)
+          <input name="poll_interval_minutes" type="number" min="1" step="1">
+        </label>
+        <label>زمان پایه / آفست (دقیقه)
+          <input name="poll_offset_minutes" type="number" min="0" step="1">
+        </label>
+        <label>تعداد آگهی برتر
+          <input name="best_count" type="number" min="1" max="10" step="1">
+        </label>
+        <p id="slot-hint" class="slot-hint"></p>
+        <button class="primary small" type="submit">ذخیره پایش</button>
+      </form>
+
+      <div class="settings">
+        <h3>ابزارها</h3>
+        <div class="row">
+          <button id="rotate-btn" class="ghost small" type="button">کلید API جدید</button>
+          <a id="feed-link" class="ghost small" href="#" target="_blank">فید عمومی</a>
+        </div>
+        <p id="api-key" class="meta mono"></p>
+      </div>
+
+      <div class="settings danger-zone">
+        <h3>حذف مشتری</h3>
+        <p class="meta">فیلترها، نشست‌ها و آگهی‌های کش‌شده این حساب پاک می‌شوند.</p>
+        <button id="delete-btn" class="danger small" type="button">حذف کامل حساب</button>
+      </div>
+    </section>
+  </main>
+  <script src="/admin-common.js?v=1"></script>
+  <script src="/admin-user.js?v=1"></script>
+</body>
+</html>

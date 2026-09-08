@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تنظیمات عمومی — ادمین</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ادمین</p>
+      <h1>تنظیمات عمومی</h1>
+    </div>
+    <div class="top-actions">
+      <span id="watch-pill" class="pill">پایش خاموش</span>
+      <button id="watch-btn" class="ghost" type="button">شروع پایش</button>
+      <a class="ghost small" href="/admin">داشبورد</a>
+      <button id="logout-btn" class="ghost" type="button">خروج</button>
+    </div>
+  </header>
+  <main class="layout single">
+    <section class="panel narrow-panel">
+      <p id="toast" class="toast" hidden></p>
+      <p class="meta">این مقادیر پیش‌فرض همه مشتریان است؛ برای هر مشتری می‌توانید در صفحه خودش مقدار جدا بگذارید.</p>
+      <form id="settings-form" class="settings">
+        <label>فاصله پایش (دقیقه)
+          <input name="poll_interval_minutes" type="number" min="1">
+        </label>
+        <label>تعداد آگهی برتر
+          <input name="best_count" type="number" min="1" max="10">
+        </label>
+        <label class="check">
+          <input name="send_photos" type="checkbox">
+          ارسال عکس
+        </label>
+        <button class="primary small" type="submit">ذخیره تنظیمات</button>
+      </form>
+    </section>
+  </main>
+  <script src="/admin-common.js?v=1"></script>
+  <script src="/admin-settings.js?v=1"></script>
+</body>
+</html>

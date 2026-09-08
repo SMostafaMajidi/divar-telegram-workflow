@@ -11,21 +11,25 @@
   <header class="topbar">
     <div>
       <p class="eyebrow">ادمین</p>
-      <h1>مدیریت مشتریان</h1>
+      <h1>داشبورد</h1>
     </div>
     <div class="top-actions">
       <span id="watch-pill" class="pill">پایش خاموش</span>
       <button id="watch-btn" class="ghost" type="button">شروع پایش</button>
+      <a class="ghost small" href="/admin/settings">تنظیمات عمومی</a>
       <button id="logout-btn" class="ghost" type="button">خروج</button>
-      <a class="ghost small" href="/">خانه</a>
     </div>
   </header>
-  <main class="layout">
+  <main class="layout single">
     <section class="panel">
       <p id="toast" class="toast" hidden></p>
 
-      <form id="create-form" class="settings">
-        <h3>افزودن مشتری</h3>
+      <div class="panel-head">
+        <h2>مشتریان <span id="user-count" class="muted-count"></span></h2>
+        <button id="toggle-create" class="primary small" type="button">افزودن مشتری</button>
+      </div>
+
+      <form id="create-form" class="settings create-box" hidden>
         <label>یوزرنیم تلگرام
           <input name="telegram_username" required placeholder="بدون @">
         </label>
@@ -36,30 +40,16 @@
           <input name="ai_enabled" type="checkbox">
           فعال‌سازی رتبه‌بندی هوشمند
         </label>
-        <button class="primary small" type="submit">ساخت حساب</button>
+        <div class="row">
+          <button class="primary small" type="submit">ساخت حساب</button>
+          <button id="cancel-create" class="ghost small" type="button">انصراف</button>
+        </div>
       </form>
 
-      <form id="settings-form" class="settings">
-        <h3>تنظیمات سراسری (پیش‌فرض)</h3>
-        <p class="meta">اگر برای مشتری مقدار جدا نگذارید، همین‌ها اعمال می‌شود.</p>
-        <label>فاصله پایش (دقیقه)
-          <input name="poll_interval_minutes" type="number" min="1">
-        </label>
-        <label>تعداد آگهی برتر
-          <input name="best_count" type="number" min="1" max="10">
-        </label>
-        <label class="check">
-          <input name="send_photos" type="checkbox">
-          ارسال عکس
-        </label>
-        <button class="ghost small" type="submit">ذخیره تنظیمات</button>
-      </form>
-    </section>
-    <section class="panel">
-      <div class="panel-head"><h2>مشتریان</h2></div>
-      <div id="user-list" class="filter-list"></div>
+      <div id="user-list" class="user-summary-list"></div>
     </section>
   </main>
-  <script src="/admin.js"></script>
+  <script src="/admin-common.js?v=1"></script>
+  <script src="/admin.js?v=4"></script>
 </body>
 </html>

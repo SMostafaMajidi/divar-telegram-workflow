@@ -147,16 +147,72 @@ code { font-size: 12px; background: #f4efe7; padding: 2px 6px; border-radius: 6p
 .card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .user-poll {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
-  margin: 4px 0 8px;
+  margin: 8px 0 10px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: #faf8f4;
+}
+.user-poll-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
 }
 .user-poll label { font-size: 12px; font-weight: 500; }
 .user-poll input { padding: 8px 10px; border-radius: 10px; }
-.slot-hint { margin: 0 0 8px; color: var(--muted); font-size: 12px; width: 100%; }
+.slot-hint { margin: 0; color: var(--muted); font-size: 12px; width: 100%; line-height: 1.6; }
+
+.narrow-panel { max-width: 640px; min-height: auto; }
+.muted-count { color: var(--muted); font-size: 14px; font-weight: 500; }
+.create-box { margin: 0 0 16px; border-top: none; padding-top: 0; }
+.user-summary-list { display: grid; gap: 8px; }
+.user-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color .15s ease, background .15s ease;
+}
+.user-summary:hover { border-color: #d7cfc3; background: #fcfaf7; }
+.user-summary.off { opacity: 0.7; }
+.user-summary-main { display: grid; gap: 4px; min-width: 0; }
+.user-summary-main strong { font-size: 15px; color: var(--ink); }
+.user-summary-main .meta { margin: 0; }
+.user-summary-side { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.slot-chip {
+  font-size: 12px;
+  color: var(--muted);
+  background: #f4efe7;
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+.user-detail-head { margin-bottom: 8px; }
+.danger-zone { border-color: #f0c7c1; background: #fff8f7; }
+.danger {
+  border: 1px solid #e8a59c;
+  background: #fde8e6;
+  color: var(--accent-dark);
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+.danger:hover { filter: brightness(0.98); }
 @media (max-width: 720px) {
-  .user-poll { grid-template-columns: 1fr; }
+  .user-summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .user-summary-side { justify-content: flex-start; }
 }
 
 .settings {

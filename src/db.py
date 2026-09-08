@@ -565,6 +565,33 @@ def rotate_api_key(user_id: str) -> dict[str, Any]:
     return user
 
 
+def delete_user(user_id: str) -> None:
+    with _lock:
+        conn = connect()
+        try:
+            cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            if cur.rowcount == 0:
+                raise AppError("User not found.")
+            # seen has no FK cascade
+            conn.execute("DELETE FROM seen WHERE user_id = ?", (user_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def user_filter_count(user_id: str) -> int:
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS c FROM filters WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            return int(row["c"] if row else 0)
+        finally:
+            conn.close()
+
+
 def link_telegram_chat(username: str, chat_id: str, *, from_message: dict[str, Any] | None = None) -> dict[str, Any]:
     username = normalize_username(username)
     with _lock:
