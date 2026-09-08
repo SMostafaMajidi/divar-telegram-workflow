@@ -137,8 +137,9 @@ function render() {
   const user = state.user;
   if (!user) return;
   const handle = user.login_username || user.telegram_username || user.id;
-  els.title.textContent = `@${handle}`;
-  document.title = `@${handle} — ادمین`;
+  const name = (user.display_name || "").trim() || "بدون نام";
+  els.title.textContent = name;
+  document.title = `${name} — ادمین`;
 
   const filterCount = user.filter_count || state.filters.length || 0;
   const exp = user.expires_at ? formatJalali(user.expires_at) : "—";
@@ -146,8 +147,8 @@ function render() {
     <div class="user-hero-main">
       <div>
         <p class="eyebrow">مشتری</p>
-        <h2>@${handle}</h2>
-        <p class="meta">${user.display_name || "بدون نام نمایشی"} · تلگرام @${user.telegram_username || "—"}</p>
+        <h2>${name}</h2>
+        <p class="meta">یوزرنیم: @${handle}${user.telegram_username && user.telegram_username !== handle ? ` · تلگرام @${user.telegram_username}` : ""}</p>
       </div>
       <div class="user-hero-pills">
         <span class="pill ${user.linked ? "ok" : "warn"}">${user.linked ? "متصل" : "منتظر ربات"}</span>

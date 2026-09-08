@@ -26,10 +26,11 @@ function renderUsers() {
     row.href = `/admin/users/${user.id}`;
     const interval = user.effective_poll_interval_minutes || 5;
     const offset = user.effective_poll_offset_minutes ?? 0;
+    const name = (user.display_name || "").trim() || "بدون نام";
     row.innerHTML = `
       <div class="user-summary-main">
-        <strong>@${user.login_username || user.telegram_username}</strong>
-        <span class="meta">${user.display_name || "—"} · ${user.filter_count || 0} فیلتر · ${user.plan_name || user.plan_id || "—"}</span>
+        <strong>${name}</strong>
+        <span class="meta">${user.filter_count || 0} فیلتر · ${user.plan_name || user.plan_id || "—"}</span>
       </div>
       <div class="user-summary-side">
         <span class="pill ${user.linked ? "ok" : "warn"}">${user.linked ? "متصل" : "منتظر"}</span>
