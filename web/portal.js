@@ -383,7 +383,7 @@ function renderStatus() {
   }
   if (els.filterQuota) {
     const parts = [max != null ? `${used} از ${max} فیلتر` : `${used} فیلتر`];
-    if (state.user.max_criteria != null) {
+    if (state.user.max_criteria != null && Number(state.user.max_criteria) > 0) {
       parts.push(`تا ${state.user.max_criteria} معیار روی هر فیلتر`);
     }
     els.filterQuota.textContent = parts.join(" · ");

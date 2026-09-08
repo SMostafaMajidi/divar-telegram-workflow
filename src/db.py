@@ -1618,10 +1618,19 @@ def confirm_invoice(invoice_id: str) -> dict[str, Any]:
     if not invoice:
         raise AppError("فاکتور پیدا نشد.")
     if invoice["status"] == "paid":
-        return invoice
+        user = get_user(invoice["user_id"])
+        return {"invoice": invoice, "user": user}
     if invoice["status"] not in {"pending", "awaiting_review"}:
         raise AppError("این فاکتور قابل تأیید نیست.")
-    apply_subscription(invoice["user_id"], invoice["plan_id"], renew=True, apply_limits=True)
+    if not invoice.get("has_receipt"):
+        raise AppError("بدون فیش واریز نمی‌توان تأیید کرد.")
+    # Activate account + apply plan limits + set expiry from plan duration.
+    user = apply_subscription(
+        invoice["user_id"],
+        invoice["plan_id"],
+        renew=True,
+        apply_limits=True,
+    )
     with _lock:
         conn = connect()
         try:
@@ -1634,12 +1643,22 @@ def confirm_invoice(invoice_id: str) -> dict[str, Any]:
                 """,
                 (now, now, invoice_id),
             )
+            # Close other open invoices for the same user+plan.
+            conn.execute(
+                """
+                UPDATE invoices
+                SET status = 'cancelled', updated_at = ?
+                WHERE user_id = ? AND plan_id = ? AND id != ?
+                  AND status IN ('pending', 'awaiting_review')
+                """,
+                (now, invoice["user_id"], invoice["plan_id"], invoice_id),
+            )
             conn.commit()
         finally:
             conn.close()
     out = get_invoice(invoice_id)
     assert out
-    return out
+    return {"invoice": out, "user": user}
 
 
 def reject_invoice(invoice_id: str) -> dict[str, Any]:
@@ -1740,7 +1759,9 @@ def upsert_plan(body: dict[str, Any], *, create: bool = False) -> dict[str, Any]
     if max_criteria_raw in (None, "", "null"):
         max_criteria = None
     else:
-        max_criteria = max(0, min(int(max_criteria_raw), 50))
+        parsed = int(max_criteria_raw)
+        # 0 = unlimited
+        max_criteria = None if parsed <= 0 else max(1, min(parsed, 50))
     now = _now()
     values = (
         name,
@@ -1799,16 +1820,24 @@ def upsert_plan(body: dict[str, Any], *, create: bool = False) -> dict[str, Any]
 
 def delete_plan(plan_id: str) -> None:
     key = str(plan_id or "").strip().lower()
-    if key in {"trial", "basic", "pro"}:
-        raise AppError("پلن‌های پیش‌فرض را حذف نکنید؛ می‌توانید غیرفعال یا ویرایش کنید.")
+    if key == "trial":
+        raise AppError("پلن آزمایشی قابل حذف نیست (پایهٔ سیستم است).")
     with _lock:
         conn = connect()
         try:
+            exists = conn.execute("SELECT id FROM plans WHERE id = ?", (key,)).fetchone()
+            if not exists:
+                raise AppError("پلن پیدا نشد.")
             used = conn.execute(
                 "SELECT COUNT(*) AS c FROM users WHERE plan_id = ?", (key,)
             ).fetchone()
-            if used and int(used["c"] or 0) > 0:
-                raise AppError("این پلن روی مشتری‌ها ست است؛ اول پلن‌شان را عوض کنید.")
+            count = int(used["c"] if used else 0)
+            if count > 0:
+                # Move customers off this plan before deleting.
+                conn.execute(
+                    "UPDATE users SET plan_id = 'trial' WHERE plan_id = ?",
+                    (key,),
+                )
             cur = conn.execute("DELETE FROM plans WHERE id = ?", (key,))
             if cur.rowcount == 0:
                 raise AppError("پلن پیدا نشد.")

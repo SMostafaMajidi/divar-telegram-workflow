@@ -51,10 +51,18 @@ function render(invoices) {
   }
   list.querySelectorAll("[data-confirm]").forEach((btn) => {
     btn.onclick = async () => {
-      if (!confirm("پرداخت تأیید و پلن اعمال شود؟")) return;
+      if (!confirm("پرداخت تأیید شود و حساب مشتری با انقضای پلن فعال گردد؟")) return;
       try {
-        await api(`/api/admin/invoices/${btn.dataset.confirm}/confirm`, { method: "POST", body: {} });
-        toast("پلن فعال شد", "ok");
+        const data = await api(`/api/admin/invoices/${btn.dataset.confirm}/confirm`, {
+          method: "POST",
+          body: {},
+        });
+        const exp = data.user?.expires_at
+          ? typeof formatJalali === "function"
+            ? formatJalali(data.user.expires_at)
+            : data.user.expires_at
+          : "—";
+        toast(`حساب فعال شد · پلن ${data.user?.plan_name || data.invoice?.plan_name || ""} · تا ${exp}`, "ok");
         load();
       } catch (err) {
         toast(err.message, "err");

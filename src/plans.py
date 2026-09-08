@@ -73,10 +73,13 @@ DEFAULT_PLANS: dict[str, dict[str, Any]] = {
 def _with_price(plan: dict[str, Any]) -> dict[str, Any]:
     out = dict(plan)
     out["price_label"] = format_toman(out.get("price_toman"))
-    if out.get("max_criteria") is None:
+    raw = out.get("max_criteria")
+    if raw is None or raw == "" or int(raw or 0) <= 0:
+        out["max_criteria"] = None
         out["max_criteria_label"] = "نامحدود"
     else:
-        out["max_criteria_label"] = str(int(out["max_criteria"]))
+        out["max_criteria"] = int(raw)
+        out["max_criteria_label"] = str(int(raw))
     return out
 
 
@@ -156,7 +159,14 @@ def effective_max_criteria(user: dict[str, Any] | None) -> int | None:
     raw = plan.get("max_criteria")
     if raw is None or raw == "":
         return None
-    return max(0, int(raw))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    # 0 means unlimited (same as empty).
+    if value <= 0:
+        return None
+    return value
 
 
 def count_filter_criteria(spec: dict[str, Any] | None) -> int:

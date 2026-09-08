@@ -545,7 +545,14 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/admin/invoices/") and path.endswith("/confirm"):
                 self._require_admin()
                 invoice_id = path.split("/")[4]
-                return self._json({"invoice": db.confirm_invoice(invoice_id)})
+                result = db.confirm_invoice(invoice_id)
+                user = result.get("user")
+                return self._json(
+                    {
+                        "invoice": result.get("invoice"),
+                        "user": _admin_user(user) if user else None,
+                    }
+                )
             if path.startswith("/api/admin/invoices/") and path.endswith("/reject"):
                 self._require_admin()
                 invoice_id = path.split("/")[4]

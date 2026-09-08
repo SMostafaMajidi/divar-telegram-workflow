@@ -70,7 +70,7 @@
           <input name="max_filters" type="number" min="0" max="100" value="3">
         </label>
         <label>سقف معیار روی هر فیلتر
-          <input name="max_criteria" type="number" min="0" max="50" placeholder="خالی = نامحدود">
+          <input name="max_criteria" type="number" min="0" max="50" value="0" placeholder="۰ = نامحدود">
         </label>
         <label>فاصله پایش (دقیقه)
           <input name="poll_interval_minutes" type="number" min="1" value="5">
@@ -79,7 +79,7 @@
           <input name="sort_order" type="number" value="10">
         </label>
       </div>
-      <p class="hint">سقف معیار یعنی چند محدودیت اضافه (قیمت، سال، کارکرد، عبارت جستجو، …) روی یک فیلتر مجاز است. شهر و کلمات حذف حساب نمی‌شوند. خالی = نامحدود.</p>
+      <p class="hint">سقف معیار یعنی چند محدودیت اضافه (قیمت، سال، کارکرد، عبارت جستجو، …) روی یک فیلتر مجاز است. شهر و کلمات حذف حساب نمی‌شوند. مقدار ۰ یا خالی = نامحدود.</p>
       <div class="toggle-row">
         <label class="check"><input name="ai_enabled" type="checkbox"> هوش مصنوعی</label>
         <label class="check"><input name="api_access" type="checkbox"> دسترسی API</label>
@@ -97,6 +97,6 @@
 
   <script src="/dates.js?v=2"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin-plans.js?v=1"></script>
+  <script src="/admin-plans.js?v=2"></script>
 </body>
 </html>
