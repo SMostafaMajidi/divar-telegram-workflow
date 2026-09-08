@@ -328,6 +328,7 @@ els.deleteBtn.onclick = async () => {
 
 async function boot() {
   bindLogout();
+  bindJalaliPickers();
   const initial = (location.hash || "").replace("#", "") || "account";
   setTab(["account", "plan", "poll", "routes", "more"].includes(initial) ? initial : "account");
   if (!userId) {
@@ -347,5 +348,9 @@ async function boot() {
     toast(err.message, "err");
   }
 }
+
+els.plan?.expires_at?.addEventListener("change", () => {
+  if (els.plan.expires_at.value) els.plan.renew.checked = false;
+});
 
 boot();

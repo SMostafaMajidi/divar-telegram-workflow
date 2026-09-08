@@ -150,21 +150,212 @@ function toJalaliInput(iso) {
   return `${jy}/${String(jm).padStart(2, "0")}/${String(jd).padStart(2, "0")}`;
 }
 
-/** Parse 1404/6/17 or ۱۴۰۴/۰۶/۱۷ → ISO end of day Asia/Tehran */
-function fromJalaliInput(value) {
+function isJalaliLeap(jy) {
+  const a = ((jy - (jy > 0 ? 474 : 473)) % 2820 + 2820) % 2820 + 474;
+  return ((a + 38) * 682) % 2816 < 682;
+}
+
+function jalaliMonthLength(jy, jm) {
+  if (jm <= 6) return 31;
+  if (jm <= 11) return 30;
+  return isJalaliLeap(jy) ? 30 : 29;
+}
+
+const JALALI_MONTHS = [
+  "فروردین",
+  "اردیبهشت",
+  "خرداد",
+  "تیر",
+  "مرداد",
+  "شهریور",
+  "مهر",
+  "آبان",
+  "آذر",
+  "دی",
+  "بهمن",
+  "اسفند",
+];
+const JALALI_WEEKDAYS = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
+
+function parseJalaliParts(value) {
   const raw = toLatinDigits(value).trim().replace(/[-\.]/g, "/");
-  if (!raw) return "";
+  if (!raw) return null;
   const m = raw.match(/^(\d{3,4})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})$/);
-  if (!m) throw new Error("تاریخ را به صورت سال/ماه/روز شمسی وارد کنید");
+  if (!m) return null;
   const jy = Number(m[1]);
   const jm = Number(m[2]);
   const jd = Number(m[3]);
-  if (jm < 1 || jm > 12 || jd < 1 || jd > 31) throw new Error("تاریخ شمسی نامعتبر است");
-  const { gy, gm, gd } = jalaliToGregorian(jy, jm, jd);
+  if (jm < 1 || jm > 12 || jd < 1 || jd > jalaliMonthLength(jy, jm)) return null;
+  return { jy, jm, jd };
+}
+
+function todayJalali() {
+  const now = new Date();
+  return gregorianToJalali(now.getFullYear(), now.getMonth() + 1, now.getDate());
+}
+
+function jalaliWeekday(jy, jm, jd) {
+  const g = jalaliToGregorian(jy, jm, jd);
+  const d = new Date(g.gy, g.gm - 1, g.gd);
+  return (d.getDay() + 1) % 7; // Saturday = 0
+}
+
+/** Parse 1404/6/17 or ۱۴۰۴/۰۶/۱۷ → ISO end of day Asia/Tehran */
+function fromJalaliInput(value) {
+  const parts = parseJalaliParts(value);
+  if (!String(value || "").trim()) return "";
+  if (!parts) throw new Error("تاریخ را به صورت سال/ماه/روز شمسی وارد کنید");
+  const { gy, gm, gd } = jalaliToGregorian(parts.jy, parts.jm, parts.jd);
   const y = String(gy).padStart(4, "0");
   const mo = String(gm).padStart(2, "0");
   const day = String(gd).padStart(2, "0");
   return `${y}-${mo}-${day}T23:59:59+03:30`;
+}
+
+function closeAllJalaliPickers() {
+  document.querySelectorAll(".jalali-popover").forEach((el) => el.remove());
+  document.querySelectorAll(".jalali-field.open").forEach((el) => el.classList.remove("open"));
+}
+
+function renderJalaliCalendar(popover, input, view) {
+  const selected = parseJalaliParts(input.value) || todayJalali();
+  const jy = view.jy;
+  const jm = view.jm;
+  const today = todayJalali();
+  const firstWeekday = jalaliWeekday(jy, jm, 1);
+  const daysInMonth = jalaliMonthLength(jy, jm);
+
+  popover.replaceChildren();
+  const head = document.createElement("div");
+  head.className = "jalali-cal-head";
+  const prev = document.createElement("button");
+  prev.type = "button";
+  prev.className = "jalali-nav";
+  prev.setAttribute("aria-label", "ماه قبل");
+  prev.textContent = "‹";
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "jalali-nav";
+  next.setAttribute("aria-label", "ماه بعد");
+  next.textContent = "›";
+  const title = document.createElement("div");
+  title.className = "jalali-cal-title";
+  title.textContent = `${JALALI_MONTHS[jm - 1]} ${toPersianDigits(jy)}`;
+  head.append(prev, title, next);
+
+  const week = document.createElement("div");
+  week.className = "jalali-cal-week";
+  for (const name of JALALI_WEEKDAYS) {
+    const cell = document.createElement("span");
+    cell.textContent = name;
+    week.append(cell);
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "jalali-cal-grid";
+  for (let i = 0; i < firstWeekday; i += 1) {
+    grid.append(document.createElement("span"));
+  }
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "jalali-day";
+    btn.textContent = toPersianDigits(day);
+    if (jy === today.jy && jm === today.jm && day === today.jd) btn.classList.add("today");
+    if (jy === selected.jy && jm === selected.jm && day === selected.jd) btn.classList.add("selected");
+    btn.addEventListener("click", () => {
+      input.value = `${jy}/${String(jm).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      closeAllJalaliPickers();
+    });
+    grid.append(btn);
+  }
+
+  const foot = document.createElement("div");
+  foot.className = "jalali-cal-foot";
+  const todayBtn = document.createElement("button");
+  todayBtn.type = "button";
+  todayBtn.className = "ghost small";
+  todayBtn.textContent = "امروز";
+  todayBtn.addEventListener("click", () => {
+    view.jy = today.jy;
+    view.jm = today.jm;
+    input.value = `${today.jy}/${String(today.jm).padStart(2, "0")}/${String(today.jd).padStart(2, "0")}`;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    renderJalaliCalendar(popover, input, view);
+  });
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "ghost small";
+  clearBtn.textContent = "پاک کردن";
+  clearBtn.addEventListener("click", () => {
+    input.value = "";
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    closeAllJalaliPickers();
+  });
+  foot.append(todayBtn, clearBtn);
+
+  popover.append(head, week, grid, foot);
+
+  prev.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (view.jm === 1) {
+      view.jm = 12;
+      view.jy -= 1;
+    } else view.jm -= 1;
+    renderJalaliCalendar(popover, input, view);
+  });
+  next.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (view.jm === 12) {
+      view.jm = 1;
+      view.jy += 1;
+    } else view.jm += 1;
+    renderJalaliCalendar(popover, input, view);
+  });
+}
+
+function openJalaliPicker(field, input) {
+  closeAllJalaliPickers();
+  const parts = parseJalaliParts(input.value) || todayJalali();
+  const view = { jy: parts.jy, jm: parts.jm };
+  const popover = document.createElement("div");
+  popover.className = "jalali-popover";
+  popover.addEventListener("click", (e) => e.stopPropagation());
+  field.append(popover);
+  field.classList.add("open");
+  renderJalaliCalendar(popover, input, view);
+}
+
+function bindJalaliPickers(root = document) {
+  root.querySelectorAll(".jalali-field").forEach((field) => {
+    if (field.dataset.bound) return;
+    field.dataset.bound = "1";
+    const input = field.querySelector("input");
+    const trigger = field.querySelector(".jalali-trigger");
+    if (!input) return;
+    input.setAttribute("readonly", "readonly");
+    input.setAttribute("autocomplete", "off");
+    const open = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (field.classList.contains("open")) closeAllJalaliPickers();
+      else openJalaliPicker(field, input);
+    };
+    trigger?.addEventListener("click", open);
+    input.addEventListener("click", open);
+    input.addEventListener("focus", () => {
+      if (!field.classList.contains("open")) openJalaliPicker(field, input);
+    });
+  });
+  if (!document.documentElement.dataset.jalaliPickerGlobal) {
+    document.documentElement.dataset.jalaliPickerGlobal = "1";
+    document.addEventListener("click", closeAllJalaliPickers);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeAllJalaliPickers();
+    });
+  }
 }
 
 function bindNavMenus(root = document) {

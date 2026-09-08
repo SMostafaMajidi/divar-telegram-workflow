@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>مشتری — ادمین</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark5">
+  <link rel="stylesheet" href="/styles.css?v=dark6">
 </head>
 <body>
   <header class="topbar">
@@ -72,7 +72,10 @@
             <input name="max_filters" type="number" min="0" max="100" placeholder="از پلن">
           </label>
           <label class="span-2">انقضا (شمسی)
-            <input name="expires_at" type="text" inputmode="numeric" placeholder="مثلاً ۱۴۰۴/۱۲/۲۹" autocomplete="off">
+            <div class="jalali-field">
+              <input name="expires_at" type="text" placeholder="انتخاب از تقویم" autocomplete="off">
+              <button type="button" class="ghost small jalali-trigger" aria-label="باز کردن تقویم">تقویم</button>
+            </div>
           </label>
         </div>
         <div class="toggle-row quiet">
@@ -133,8 +136,8 @@
     </section>
   </main>
 
-  <script src="/dates.js?v=1"></script>
+  <script src="/dates.js?v=2"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin-user.js?v=7"></script>
+  <script src="/admin-user.js?v=8"></script>
 </body>
 </html>
