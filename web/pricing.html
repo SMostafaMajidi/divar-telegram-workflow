@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark1">
+  <link rel="stylesheet" href="/styles.css?v=dark4">
 </head>
 <body>
   <header class="topbar">
@@ -16,8 +16,16 @@
       <h1>پلن‌ها</h1>
     </div>
     <div class="top-actions">
-      <a class="ghost small" href="/">ورود مشتری</a>
-      <a class="primary small" href="/">شروع آزمایشی</a>
+      <div class="nav-menu">
+        <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
+          منو
+          <span class="menu-caret" aria-hidden="true"></span>
+        </button>
+        <div class="menu-dropdown" hidden role="menu">
+          <a class="menu-item" href="/" role="menuitem">ورود مشتری</a>
+          <a class="menu-item" href="/" role="menuitem">شروع آزمایشی</a>
+        </div>
+      </div>
     </div>
   </header>
   <main class="layout single">
@@ -27,8 +35,9 @@
       <p class="meta">برای ارتقا یا تمدید، در ربات پیام بدهید یا با پشتیبانی هماهنگ کنید.</p>
     </section>
   </main>
+  <script src="/dates.js?v=1"></script>
   <script>
-    const kinds = { trial: "آزمایشی", basic: "پایه", pro: "حرفه‌ای" };
+    bindNavMenus();
     async function boot() {
       const res = await fetch("/api/plans");
       const data = await res.json();

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>مشتری — ادمین</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark2">
+  <link rel="stylesheet" href="/styles.css?v=dark4">
 </head>
 <body>
   <header class="topbar">
@@ -14,9 +14,18 @@
       <h1 id="page-title">مشتری</h1>
     </div>
     <div class="top-actions">
-      <a class="ghost small" href="/admin">بازگشت</a>
-      <a class="ghost small" href="/admin/settings">تنظیمات عمومی</a>
-      <button id="logout-btn" class="ghost" type="button">خروج</button>
+      <div class="nav-menu">
+        <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
+          منو
+          <span class="menu-caret" aria-hidden="true"></span>
+        </button>
+        <div class="menu-dropdown" hidden role="menu">
+          <a class="menu-item" href="/admin" role="menuitem">داشبورد</a>
+          <a class="menu-item" href="/admin/settings" role="menuitem">تنظیمات عمومی</a>
+          <hr class="menu-sep">
+          <button id="logout-btn" class="menu-item danger" type="button" role="menuitem">خروج</button>
+        </div>
+      </div>
     </div>
   </header>
   <main class="layout single">
@@ -49,9 +58,10 @@
         <label>سقف فیلتر (خالی = از پلن)
           <input name="max_filters" type="number" min="0" max="100" placeholder="مثلاً ۳">
         </label>
-        <label>تاریخ انقضا
-          <input name="expires_at" type="date">
+        <label>تاریخ انقضا (شمسی)
+          <input name="expires_at" type="text" inputmode="numeric" placeholder="مثلاً ۱۴۰۴/۱۲/۲۹" autocomplete="off">
         </label>
+        <p class="hint">فرمت: سال/ماه/روز شمسی — مثلاً ۱۴۰۴/۰۶/۱۷</p>
         <label class="check">
           <input name="apply_limits" type="checkbox" checked>
           با اعمال پلن، سقف/فاصله/AI هم ست شود
@@ -113,7 +123,8 @@
       </div>
     </section>
   </main>
-  <script src="/admin-common.js?v=1"></script>
-  <script src="/admin-user.js?v=5"></script>
+  <script src="/dates.js?v=1"></script>
+  <script src="/admin-common.js?v=2"></script>
+  <script src="/admin-user.js?v=6"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>پنل مشتری — دیوار واچر</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark3">
+  <link rel="stylesheet" href="/styles.css?v=dark4">
 </head>
 <body>
   <header class="topbar">
@@ -16,8 +16,19 @@
     </div>
     <div class="top-actions">
       <span id="ai-pill" class="pill" hidden>هوش مصنوعی</span>
-      <button id="run-btn" class="ghost small" type="button" hidden>ارسال بهترین‌ها</button>
-      <button id="logout-btn" class="ghost" type="button">خروج</button>
+      <div class="nav-menu">
+        <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
+          منو
+          <span class="menu-caret" aria-hidden="true"></span>
+        </button>
+        <div class="menu-dropdown" hidden role="menu">
+          <button id="run-btn" class="menu-item" type="button" role="menuitem" hidden>ارسال بهترین‌ها</button>
+          <a class="menu-item" href="/pricing" role="menuitem">پلن‌ها</a>
+          <a class="menu-item" href="/app/api" role="menuitem">مستندات API</a>
+          <hr class="menu-sep">
+          <button id="logout-btn" class="menu-item danger" type="button" role="menuitem">خروج</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -112,6 +123,7 @@
       </footer>
     </form>
   </dialog>
-  <script src="/portal.js?v=5"></script>
+  <script src="/dates.js?v=1"></script>
+  <script src="/portal.js?v=6"></script>
 </body>
 </html>

@@ -372,7 +372,7 @@ function renderStatus() {
   const status = state.user.subscription_status || "—";
   const max = state.user.max_filters;
   const used = state.filters.length;
-  const exp = state.user.expires_at ? state.user.expires_at.slice(0, 10) : null;
+  const exp = state.user.expires_at ? formatJalali(state.user.expires_at) : null;
   if (els.planLine) {
     els.planLine.textContent = exp
       ? `پلن ${plan} · ${status} · تا ${exp}`
@@ -877,4 +877,5 @@ async function boot() {
   }
 }
 
+bindNavMenus();
 boot();

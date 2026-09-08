@@ -29,22 +29,18 @@ function chatLabel(chat) {
   return kind ? `${name} · ${kind}` : String(name);
 }
 
-function toDateInput(iso) {
-  const raw = String(iso || "").trim();
-  if (!raw) return "";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return raw.slice(0, 10);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function fromDateInput(value) {
+function parseExpiryInput(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  // End of selected day in Iran time (UTC+3:30)
-  return `${raw}T23:59:59+03:30`;
+  try {
+    return fromJalaliInput(raw);
+  } catch (err) {
+    // Fall back if someone pastes a gregorian ISO / YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+      return raw.includes("T") ? raw : `${raw}T23:59:59+03:30`;
+    }
+    throw err;
+  }
 }
 
 function fillSelect(select, items, { valueKey = "id", labelFn, emptyLabel, selected, skipIds = [] } = {}) {
@@ -118,7 +114,7 @@ function render() {
     <div class="card-top">
       <div>
         <p class="meta">${user.display_name || ""} · تلگرام: @${user.telegram_username || "—"}</p>
-        <p class="meta">${user.filter_count || state.filters.length || 0} فیلتر · ساخته‌شده: ${(user.created_at || "").slice(0, 10)}</p>
+        <p class="meta">${user.filter_count || state.filters.length || 0} فیلتر · ساخته‌شده: ${formatJalali(user.created_at)}</p>
       </div>
       <div class="row">
         <span class="pill ${user.linked ? "ok" : "warn"}">${user.linked ? "متصل" : "منتظر ربات"}</span>
@@ -136,10 +132,10 @@ function render() {
       selected: user.plan_id || "trial",
     });
     els.plan.max_filters.value = user.max_filters ?? "";
-    els.plan.expires_at.value = toDateInput(user.expires_at);
+    els.plan.expires_at.value = toJalaliInput(user.expires_at);
     els.planStatus.textContent =
       `وضعیت: ${user.subscription_status || "—"} · سقف مؤثر: ${user.effective_max_filters ?? "—"} فیلتر` +
-      (user.expires_at ? ` · انقضا: ${toDateInput(user.expires_at)}` : "");
+      (user.expires_at ? ` · انقضا: ${formatJalali(user.expires_at)}` : "");
   }
   els.poll.poll_interval_minutes.value =
     user.poll_interval_minutes ?? user.effective_poll_interval_minutes ?? 5;
@@ -191,7 +187,7 @@ if (els.plan) {
           plan_id: els.planId.value || "trial",
           renew: els.plan.renew.checked,
           apply_limits: els.plan.apply_limits.checked,
-          expires_at: els.plan.renew.checked ? undefined : fromDateInput(els.plan.expires_at.value),
+          expires_at: els.plan.renew.checked ? undefined : parseExpiryInput(els.plan.expires_at.value),
         },
       });
       state.user = data.user;
@@ -207,7 +203,7 @@ if (els.plan) {
         method: "PUT",
         body: {
           max_filters: optionalNumber(els.plan.max_filters.value),
-          expires_at: fromDateInput(els.plan.expires_at.value),
+          expires_at: parseExpiryInput(els.plan.expires_at.value),
         },
       });
       state.user = data.user;

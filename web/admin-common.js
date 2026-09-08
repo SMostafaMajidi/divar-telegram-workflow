@@ -70,3 +70,11 @@ function bindLogout() {
     location.href = "/admin/login";
   };
 }
+
+if (typeof bindNavMenus === "function") {
+  bindNavMenus();
+} else {
+  document.addEventListener("DOMContentLoaded", () => {
+    if (typeof bindNavMenus === "function") bindNavMenus();
+  });
+}
