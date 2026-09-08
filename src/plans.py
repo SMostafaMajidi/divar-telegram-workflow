@@ -4,12 +4,23 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
+PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+
+
+def format_toman(amount: int | None) -> str:
+    value = int(amount or 0)
+    if value <= 0:
+        return "رایگان"
+    grouped = f"{value:,}".replace(",", "٬").translate(PERSIAN_DIGITS)
+    return f"{grouped} تومان / ماه"
+
+
 PLANS: dict[str, dict[str, Any]] = {
     "trial": {
         "id": "trial",
         "name": "آزمایشی",
         "tagline": "۷ روز برای تست واقعی",
-        "price_label": "رایگان",
+        "price_toman": 0,
         "max_filters": 1,
         "poll_interval_minutes": 5,
         "ai_enabled": False,
@@ -21,7 +32,7 @@ PLANS: dict[str, dict[str, Any]] = {
         "id": "basic",
         "name": "پایه",
         "tagline": "برای پیگیری روزانه آگهی",
-        "price_label": "هماهنگی با پشتیبانی",
+        "price_toman": 490_000,
         "max_filters": 3,
         "poll_interval_minutes": 5,
         "ai_enabled": False,
@@ -32,8 +43,8 @@ PLANS: dict[str, dict[str, Any]] = {
     "pro": {
         "id": "pro",
         "name": "حرفه‌ای",
-        "tagline": "فیلتر بیشتر + رتبه‌بندی هوشمند",
-        "price_label": "هماهنگی با پشتیبانی",
+        "tagline": "فیلتر بیشتر + رتبه‌بندی هوشمند + API",
+        "price_toman": 990_000,
         "max_filters": 10,
         "poll_interval_minutes": 3,
         "ai_enabled": True,
@@ -50,15 +61,21 @@ PLANS: dict[str, dict[str, Any]] = {
 }
 
 
+def _with_price(plan: dict[str, Any]) -> dict[str, Any]:
+    out = dict(plan)
+    out["price_label"] = format_toman(out.get("price_toman"))
+    return out
+
+
 def list_plans() -> list[dict[str, Any]]:
-    return [dict(PLANS[key]) for key in ("trial", "basic", "pro")]
+    return [_with_price(PLANS[key]) for key in ("trial", "basic", "pro")]
 
 
 def get_plan(plan_id: str | None) -> dict[str, Any]:
     key = str(plan_id or "trial").strip().lower() or "trial"
     if key not in PLANS:
         key = "trial"
-    return dict(PLANS[key])
+    return _with_price(PLANS[key])
 
 
 def parse_expires_at(value: Any) -> datetime | None:
@@ -110,3 +127,7 @@ def has_api_access(user: dict[str, Any] | None) -> bool:
         return False
     plan = get_plan(user.get("plan_id"))
     return bool(plan.get("api_access"))
+
+
+def paid_plan_ids() -> set[str]:
+    return {pid for pid, plan in PLANS.items() if int(plan.get("price_toman") or 0) > 0}

@@ -4,55 +4,120 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>قیمت‌ها — دیوار واچر</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark4">
+  <link rel="stylesheet" href="/styles.css?v=dark7">
 </head>
 <body>
   <header class="topbar">
     <div>
       <p class="eyebrow">دیوار واچر</p>
-      <h1>پلن‌ها</h1>
+      <h1>پلن‌ها و قیمت</h1>
     </div>
     <div class="top-actions">
       <div class="nav-menu">
         <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
-          منو
-          <span class="menu-caret" aria-hidden="true"></span>
+          منو <span class="menu-caret" aria-hidden="true"></span>
         </button>
         <div class="menu-dropdown" hidden role="menu">
           <a class="menu-item" href="/" role="menuitem">ورود مشتری</a>
-          <a class="menu-item" href="/" role="menuitem">شروع آزمایشی</a>
+          <a class="menu-item" href="/support" role="menuitem">شروع و پشتیبانی</a>
+          <a class="menu-item" href="/terms" role="menuitem">قوانین</a>
+          <a class="menu-item" href="/app/billing" role="menuitem">صورتحساب من</a>
         </div>
       </div>
     </div>
   </header>
   <main class="layout single">
     <section class="panel narrow-panel pricing-wrap">
-      <p class="hint">آگهی مناسب، زودتر از بقیه، روی تلگرام. پرداخت فعلاً با هماهنگی پشتیبانی انجام می‌شود.</p>
+      <p id="toast" class="toast" hidden></p>
+      <p class="hint">آگهی مناسب، زودتر از بقیه، روی تلگرام. پرداخت ماهانه با کارت‌به‌کارت و تأیید پشتیبانی.</p>
       <div id="plans" class="pricing-grid"></div>
-      <p class="meta">برای ارتقا یا تمدید، در ربات پیام بدهید یا با پشتیبانی هماهنگ کنید.</p>
+      <div id="pay-box" class="pay-box" hidden></div>
+      <p class="meta">با خرید، <a href="/terms">قوانین استفاده</a> و <a href="/cancel-policy">سیاست لغو</a> را می‌پذیرید. راهنما: <a href="/support">شروع و پشتیبانی</a>.</p>
     </section>
   </main>
-  <script src="/dates.js?v=1"></script>
+  <script src="/dates.js?v=2"></script>
   <script>
     bindNavMenus();
+    const toastEl = document.getElementById("toast");
+    const payBox = document.getElementById("pay-box");
+    let payment = null;
+    let loggedIn = false;
+
+    function toast(msg, kind="") {
+      toastEl.hidden = !msg;
+      toastEl.className = `toast ${kind}`.trim();
+      toastEl.textContent = msg || "";
+    }
+
+    async function api(path, options={}) {
+      const res = await fetch(path, {
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        ...options,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) throw new Error("LOGIN");
+      if (!res.ok) throw new Error(data.error || "خطا");
+      return data;
+    }
+
+    async function buy(planId) {
+      try {
+        const data = await api("/api/invoices", { method: "POST", body: { plan_id: planId } });
+        location.href = `/app/billing#${data.invoice.id}`;
+      } catch (err) {
+        if (err.message === "LOGIN") {
+          toast("اول وارد پنل شوید، بعد پلن را انتخاب کنید.", "err");
+          setTimeout(() => { location.href = "/"; }, 1200);
+          return;
+        }
+        toast(err.message, "err");
+      }
+    }
+
     async function boot() {
-      const res = await fetch("/api/plans");
-      const data = await res.json();
+      const [plansRes, meRes] = await Promise.all([
+        fetch("/api/plans").then((r) => r.json()),
+        fetch("/api/me", { credentials: "same-origin" }).then(async (r) => {
+          if (r.status === 401) return null;
+          return r.json();
+        }),
+      ]);
+      payment = plansRes.payment || {};
+      loggedIn = !!(meRes && meRes.user);
       const root = document.getElementById("plans");
-      for (const plan of data.plans || []) {
+      for (const plan of plansRes.plans || []) {
         const card = document.createElement("article");
         card.className = `pricing-card ${plan.id === "pro" ? "featured" : ""}`;
+        const cta = plan.id === "trial"
+          ? `<a class="primary small" href="${loggedIn ? "/app" : "/"}">شروع رایگان</a>`
+          : `<button class="primary small" type="button" data-plan="${plan.id}">خرید / تمدید</button>`;
         card.innerHTML = `
           <p class="eyebrow">${plan.name}</p>
           <h2>${plan.price_label}</h2>
           <p class="meta">${plan.tagline || ""}</p>
           <ul class="pricing-features">${(plan.features || []).map((f) => `<li>${f}</li>`).join("")}</ul>
-          <a class="primary small" href="/">${plan.id === "trial" ? "شروع رایگان" : "درخواست پلن"}</a>
+          ${cta}
         `;
         root.append(card);
+      }
+      root.querySelectorAll("[data-plan]").forEach((btn) => {
+        btn.addEventListener("click", () => buy(btn.dataset.plan));
+      });
+      if (payment.configured) {
+        payBox.hidden = false;
+        payBox.innerHTML = `
+          <h3>پرداخت کارت‌به‌کارت</h3>
+          <p class="meta">${payment.note || ""}</p>
+          <p><b>${payment.card_holder}</b></p>
+          <p class="mono" dir="ltr">${payment.card_number}</p>
+          ${payment.support_url ? `<p class="meta"><a href="${payment.support_url}" target="_blank">پشتیبانی تلگرام</a></p>` : ""}
+        `;
+      } else {
+        payBox.hidden = false;
+        payBox.innerHTML = `<p class="meta">اطلاعات کارت هنوز در تنظیمات سرور ست نشده. پس از صدور فاکتور، پشتیبانی مبلغ و کارت را اعلام می‌کند.</p>`;
       }
     }
     boot();

@@ -109,6 +109,20 @@ def init_db(path: Path = DB_PATH) -> None:
                 CREATE INDEX IF NOT EXISTS idx_listings_user ON listings_cache(user_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_users_username ON users(telegram_username);
                 CREATE INDEX IF NOT EXISTS idx_user_chats_user ON user_chats(user_id);
+                CREATE TABLE IF NOT EXISTS invoices (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    plan_id TEXT NOT NULL,
+                    amount_toman INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    ref_code TEXT NOT NULL UNIQUE,
+                    payer_note TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    paid_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(user_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status, created_at DESC);
                 """
             )
             cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
@@ -147,6 +161,28 @@ def init_db(path: Path = DB_PATH) -> None:
                     PRIMARY KEY (user_id, chat_id)
                 )
                 """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS invoices (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    plan_id TEXT NOT NULL,
+                    amount_toman INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    ref_code TEXT NOT NULL UNIQUE,
+                    payer_note TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    paid_at TEXT
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(user_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status, created_at DESC)"
             )
             conn.commit()
         finally:
@@ -1237,3 +1273,222 @@ def active_users_with_filters() -> list[dict[str, Any]]:
         if filters:
             result.append({"user": user, "filters": filters})
     return result
+
+
+def _invoice_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    from plans import format_toman, get_plan
+
+    plan = get_plan(row["plan_id"])
+    amount = int(row["amount_toman"] or 0)
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "plan_id": row["plan_id"],
+        "plan_name": plan.get("name") or row["plan_id"],
+        "amount_toman": amount,
+        "amount_label": format_toman(amount),
+        "status": row["status"],
+        "ref_code": row["ref_code"],
+        "payer_note": row["payer_note"] or "",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "paid_at": row["paid_at"] or "",
+    }
+
+
+def _new_ref_code() -> str:
+    return secrets.token_hex(3).upper()
+
+
+def create_invoice(user_id: str, plan_id: str) -> dict[str, Any]:
+    from plans import get_plan, paid_plan_ids
+
+    plan = get_plan(plan_id)
+    if plan["id"] not in paid_plan_ids():
+        raise AppError("برای این پلن فاکتور صادر نمی‌شود.")
+    amount = int(plan.get("price_toman") or 0)
+    if amount <= 0:
+        raise AppError("مبلغ پلن نامعتبر است.")
+    user = get_user(user_id)
+    if not user:
+        raise AppError("User not found.")
+
+    with _lock:
+        conn = connect()
+        try:
+            existing = conn.execute(
+                """
+                SELECT * FROM invoices
+                WHERE user_id = ? AND plan_id = ? AND status IN ('pending', 'awaiting_review')
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (user_id, plan["id"]),
+            ).fetchone()
+            if existing:
+                return _invoice_from_row(existing)  # type: ignore[return-value]
+
+            invoice_id = uuid.uuid4().hex[:12]
+            now = _now()
+            ref = _new_ref_code()
+            for _ in range(5):
+                clash = conn.execute("SELECT 1 FROM invoices WHERE ref_code = ?", (ref,)).fetchone()
+                if not clash:
+                    break
+                ref = _new_ref_code()
+            conn.execute(
+                """
+                INSERT INTO invoices
+                (id, user_id, plan_id, amount_toman, status, ref_code, payer_note, created_at, updated_at, paid_at)
+                VALUES (?, ?, ?, ?, 'pending', ?, '', ?, ?, NULL)
+                """,
+                (invoice_id, user_id, plan["id"], amount, ref, now, now),
+            )
+            conn.commit()
+            row = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+            return _invoice_from_row(row)  # type: ignore[return-value]
+        finally:
+            conn.close()
+
+
+def get_invoice(invoice_id: str) -> dict[str, Any] | None:
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+            return _invoice_from_row(row)
+        finally:
+            conn.close()
+
+
+def list_user_invoices(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    with _lock:
+        conn = connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM invoices WHERE user_id = ?
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (user_id, max(1, min(int(limit), 100))),
+            ).fetchall()
+            return [_invoice_from_row(row) for row in rows]  # type: ignore[misc]
+        finally:
+            conn.close()
+
+
+def list_invoices(*, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    with _lock:
+        conn = connect()
+        try:
+            if status:
+                rows = conn.execute(
+                    """
+                    SELECT i.*, u.display_name, u.login_username, u.telegram_username
+                    FROM invoices i
+                    LEFT JOIN users u ON u.id = i.user_id
+                    WHERE i.status = ?
+                    ORDER BY i.created_at DESC LIMIT ?
+                    """,
+                    (status, max(1, min(int(limit), 200))),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT i.*, u.display_name, u.login_username, u.telegram_username
+                    FROM invoices i
+                    LEFT JOIN users u ON u.id = i.user_id
+                    ORDER BY i.created_at DESC LIMIT ?
+                    """,
+                    (max(1, min(int(limit), 200)),),
+                ).fetchall()
+            out = []
+            for row in rows:
+                inv = _invoice_from_row(row)
+                if not inv:
+                    continue
+                inv["user_name"] = row["display_name"] or ""
+                inv["login_username"] = row["login_username"] or ""
+                inv["telegram_username"] = row["telegram_username"] or ""
+                out.append(inv)
+            return out
+        finally:
+            conn.close()
+
+
+def mark_invoice_paid_by_user(invoice_id: str, user_id: str, payer_note: str = "") -> dict[str, Any]:
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+            if not row or row["user_id"] != user_id:
+                raise AppError("فاکتور پیدا نشد.")
+            if row["status"] not in {"pending", "awaiting_review"}:
+                raise AppError("این فاکتور قابل به‌روزرسانی نیست.")
+            now = _now()
+            conn.execute(
+                """
+                UPDATE invoices
+                SET status = 'awaiting_review', payer_note = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (str(payer_note or "").strip()[:200], now, invoice_id),
+            )
+            conn.commit()
+            refreshed = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+            return _invoice_from_row(refreshed)  # type: ignore[return-value]
+        finally:
+            conn.close()
+
+
+def confirm_invoice(invoice_id: str) -> dict[str, Any]:
+    invoice = get_invoice(invoice_id)
+    if not invoice:
+        raise AppError("فاکتور پیدا نشد.")
+    if invoice["status"] == "paid":
+        return invoice
+    if invoice["status"] not in {"pending", "awaiting_review"}:
+        raise AppError("این فاکتور قابل تأیید نیست.")
+    apply_subscription(invoice["user_id"], invoice["plan_id"], renew=True, apply_limits=True)
+    with _lock:
+        conn = connect()
+        try:
+            now = _now()
+            conn.execute(
+                """
+                UPDATE invoices
+                SET status = 'paid', paid_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (now, now, invoice_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    out = get_invoice(invoice_id)
+    assert out
+    return out
+
+
+def reject_invoice(invoice_id: str) -> dict[str, Any]:
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+            if not row:
+                raise AppError("فاکتور پیدا نشد.")
+            if row["status"] not in {"pending", "awaiting_review"}:
+                raise AppError("این فاکتور قابل رد نیست.")
+            now = _now()
+            conn.execute(
+                """
+                UPDATE invoices SET status = 'rejected', updated_at = ? WHERE id = ?
+                """,
+                (now, invoice_id),
+            )
+            conn.commit()
+            refreshed = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+            return _invoice_from_row(refreshed)  # type: ignore[return-value]
+        finally:
+            conn.close()

@@ -918,6 +918,37 @@ select[multiple] { min-height: 120px; }
   font-size: 13px;
 }
 
+.pay-box {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 8px;
+}
+.pay-box h3 { margin: 0; font-size: 16px; }
+.invoice-list { display: grid; gap: 10px; margin-top: 12px; }
+.invoice-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 10px;
+}
+.invoice-card .row {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+.legal-copy {
+  display: grid;
+  gap: 10px;
+  line-height: 1.85;
+}
+.legal-copy h3 { margin: 10px 0 0; font-size: 16px; }
+.legal-copy p { margin: 0; color: var(--muted); }
+
 .topbar-meta {
   margin: 6px 0 0;
   max-width: 42ch;

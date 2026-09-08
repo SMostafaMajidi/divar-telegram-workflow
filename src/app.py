@@ -27,6 +27,7 @@ from config_store import (
     poll_interval_minutes,
     public_base_url,
     public_settings,
+    payment_info,
     slot_preview_minutes,
     update_settings,
     user_best_count,
@@ -111,20 +112,27 @@ class Handler(BaseHTTPRequestHandler):
             "/admin/login",
             "/admin/settings",
             "/pricing",
+            "/terms",
+            "/cancel-policy",
+            "/support",
             "/app",
             "/app/login",
             "/app/access",
             "/app/api",
+            "/app/billing",
+            "/admin/payments",
             "/styles.css",
             "/app.js",
             "/admin.js",
             "/admin-common.js",
             "/admin-settings.js",
             "/admin-user.js",
+            "/admin-payments.js",
             "/admin-login.js",
             "/app-login.js",
             "/app-api.js",
             "/portal.js",
+            "/billing.js",
             "/feed.js",
             "/dates.js",
         } or path.startswith("/u/") or path.startswith("/admin/users/"):
@@ -183,6 +191,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(WEB_DIR / "admin-settings.html")
             if path == "/pricing":
                 return self._file(WEB_DIR / "pricing.html")
+            if path == "/terms":
+                return self._file(WEB_DIR / "terms.html")
+            if path == "/cancel-policy":
+                return self._file(WEB_DIR / "cancel-policy.html")
+            if path == "/support":
+                return self._file(WEB_DIR / "support.html")
+            if path == "/admin/payments":
+                if not self._admin_logged_in():
+                    self.send_response(302)
+                    self.send_header("Location", "/admin/login")
+                    self.end_headers()
+                    return
+                return self._file(WEB_DIR / "admin-payments.html")
             if path.startswith("/admin/users/"):
                 if not self._admin_logged_in():
                     self.send_response(302)
@@ -197,6 +218,13 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 return self._file(WEB_DIR / "portal.html")
+            if path == "/app/billing":
+                if not self._cookie("session") or not db.get_session_user(self._cookie("session")):
+                    self.send_response(302)
+                    self.send_header("Location", "/")
+                    self.end_headers()
+                    return
+                return self._file(WEB_DIR / "billing.html")
             if path == "/app/login":
                 self.send_response(302)
                 self.send_header("Location", "/")
@@ -244,8 +272,10 @@ class Handler(BaseHTTPRequestHandler):
                 "/app-login.js",
                 "/app-api.js",
                 "/portal.js",
+                "/billing.js",
                 "/feed.js",
                 "/dates.js",
+                "/admin-payments.js",
             }:
                 return self._file(WEB_DIR / path.lstrip("/"))
 
@@ -263,7 +293,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/plans":
                 from plans import list_plans
 
-                return self._json({"plans": list_plans()})
+                return self._json({"plans": list_plans(), "payment": payment_info()})
+            if path == "/api/payment-info":
+                return self._json({"payment": payment_info()})
+            if path == "/api/invoices":
+                user = self._require_user()
+                return self._json({"invoices": db.list_user_invoices(user["id"])})
+            if path == "/api/admin/invoices":
+                self._require_admin()
+                status = (query.get("status") or [""])[0].strip() or None
+                return self._json({"invoices": db.list_invoices(status=status)})
             if path == "/api/categories":
                 return self._json(category_payload())
             if path == "/api/divar-filters":
@@ -392,6 +431,25 @@ class Handler(BaseHTTPRequestHandler):
                     active=bool(body.get("active", True)),
                 )
                 return self._json({"user": _admin_user(user)}, 201)
+            if path == "/api/invoices":
+                user = self._require_user()
+                invoice = db.create_invoice(user["id"], str(body.get("plan_id") or ""))
+                return self._json({"invoice": invoice, "payment": payment_info()}, 201)
+            if path.startswith("/api/invoices/") and path.endswith("/paid"):
+                user = self._require_user()
+                invoice_id = path.split("/")[3]
+                invoice = db.mark_invoice_paid_by_user(
+                    invoice_id, user["id"], str(body.get("payer_note") or "")
+                )
+                return self._json({"invoice": invoice})
+            if path.startswith("/api/admin/invoices/") and path.endswith("/confirm"):
+                self._require_admin()
+                invoice_id = path.split("/")[4]
+                return self._json({"invoice": db.confirm_invoice(invoice_id)})
+            if path.startswith("/api/admin/invoices/") and path.endswith("/reject"):
+                self._require_admin()
+                invoice_id = path.split("/")[4]
+                return self._json({"invoice": db.reject_invoice(invoice_id)})
             if path.startswith("/api/admin/users/") and path.endswith("/rotate-key"):
                 self._require_admin()
                 user_id = path.split("/")[4]

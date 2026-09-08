@@ -428,12 +428,30 @@ def public_base_url() -> str:
     return (os.getenv("PUBLIC_BASE_URL") or "http://127.0.0.1:8765").rstrip("/")
 
 
+def payment_info() -> dict[str, Any]:
+    load_dotenv()
+    card = (os.getenv("PAYMENT_CARD_NUMBER") or "").strip()
+    holder = (os.getenv("PAYMENT_CARD_HOLDER") or "").strip()
+    support = (os.getenv("SUPPORT_TELEGRAM") or "").strip().lstrip("@")
+    note = (os.getenv("PAYMENT_NOTE") or "").strip()
+    return {
+        "card_number": card,
+        "card_holder": holder,
+        "support_telegram": support,
+        "support_url": f"https://t.me/{support}" if support else "",
+        "note": note
+        or "مبلغ را کارت‌به‌کارت کنید و شناسه فاکتور را در توضیحات واریز بنویسید.",
+        "configured": bool(card and holder),
+    }
+
+
 def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     config = config or load_config()
     load_dotenv()
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     from notifier import telegram_bot_username
     seconds = poll_interval_seconds(config)
+    pay = payment_info()
     return {
         "poll_interval_minutes": max(1, seconds // 60),
         "best_count": max(1, min(int(config.get("best_count") or config.get("max_send_per_run") or 5), 10)),
@@ -447,6 +465,9 @@ def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "llm_model": (os.getenv("LLM_MODEL") or "gpt-4o-mini").strip(),
         "public_base_url": public_base_url(),
         "admin_configured": bool(admin_username() and admin_password()) or bool(admin_token()),
+        "payment": pay,
+        "support_telegram": pay.get("support_telegram") or "",
+        "support_url": pay.get("support_url") or "",
     }
 
 
