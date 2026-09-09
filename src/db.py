@@ -2314,7 +2314,7 @@ def delete_plan(plan_id: str) -> None:
             conn.close()
 
 
-WATCH_EVENT_KEEP = 200
+WATCH_EVENT_KEEP = 20
 
 
 def _watch_event_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -2406,7 +2406,7 @@ def log_watch_event(
                     LIMIT ?
                   )
                 """,
-                (user_id, user_id, max(20, int(keep or WATCH_EVENT_KEEP))),
+                (user_id, user_id, max(1, min(int(keep or WATCH_EVENT_KEEP), WATCH_EVENT_KEEP))),
             )
             conn.commit()
             row = conn.execute("SELECT * FROM watch_events WHERE id = ?", (event_id,)).fetchone()
@@ -2415,10 +2415,26 @@ def log_watch_event(
             conn.close()
 
 
-def list_watch_events(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+def list_watch_events(user_id: str, limit: int = WATCH_EVENT_KEEP) -> list[dict[str, Any]]:
+    keep = max(1, min(int(limit or WATCH_EVENT_KEEP), WATCH_EVENT_KEEP))
     with _lock:
         conn = connect()
         try:
+            # Drop older rows so each user only keeps the newest N.
+            conn.execute(
+                """
+                DELETE FROM watch_events
+                WHERE user_id = ?
+                  AND id NOT IN (
+                    SELECT id FROM watch_events
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC, rowid DESC
+                    LIMIT ?
+                  )
+                """,
+                (user_id, user_id, WATCH_EVENT_KEEP),
+            )
+            conn.commit()
             rows = conn.execute(
                 """
                 SELECT * FROM watch_events
@@ -2426,7 +2442,7 @@ def list_watch_events(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
                 ORDER BY created_at DESC, rowid DESC
                 LIMIT ?
                 """,
-                (user_id, max(1, min(int(limit or 50), 200))),
+                (user_id, keep),
             ).fetchall()
             return [_watch_event_from_row(row) for row in rows]  # type: ignore[misc]
         finally:

@@ -364,6 +364,14 @@ function renderPayments() {
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function renderWatchLog() {
   if (!els.watchList) return;
   els.watchList.replaceChildren();
@@ -376,30 +384,52 @@ function renderWatchLog() {
     );
     return;
   }
+  const table = document.createElement("table");
+  table.className = "watch-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>زمان</th>
+        <th>عمل</th>
+        <th>فیلتر</th>
+        <th>مسیر</th>
+        <th>یافت</th>
+        <th>تازه</th>
+        <th>ارسال</th>
+        <th>وضعیت</th>
+        <th>پیام</th>
+      </tr>
+    </thead>
+  `;
+  const tbody = document.createElement("tbody");
   for (const ev of state.watchEvents) {
-    const row = document.createElement("article");
-    const statusClass =
-      ev.status === "success" ? "ok" : ev.status === "failure" || ev.status === "skipped" ? "warn" : "";
-    row.className = `watch-log-item ${ev.status || ""}`;
+    const tr = document.createElement("tr");
+    tr.className = ev.status || "";
     const when =
-      typeof formatJalali === "function" ? formatJalali(ev.created_at, { withTime: true }) : ev.created_at || "";
-    const counts = [];
-    if (ev.action === "scan" || ev.found_count) counts.push(`یافت ${ev.found_count || 0}`);
-    if (ev.new_count) counts.push(`تازه ${ev.new_count}`);
-    if (ev.sent_count) counts.push(`ارسال ${ev.sent_count}`);
-    row.innerHTML = `
-      <div class="card-top">
-        <div>
-          <strong>${WATCH_ACTION[ev.action] || ev.action} · ${ev.filter_name || "فیلتر"}</strong>
-          <p class="meta">${WATCH_PLATFORM[ev.platform] || ev.platform} → ${WATCH_CHANNEL[ev.channel] || ev.channel}${counts.length ? ` · ${counts.join(" · ")}` : ""}</p>
-          <p class="meta">${ev.message || "—"}</p>
-          <p class="meta">${when}${ev.destination ? ` · مقصد: <span dir="ltr">${ev.destination}</span>` : ""}</p>
-        </div>
-        <span class="pill ${statusClass}">${WATCH_STATUS[ev.status] || ev.status}</span>
-      </div>
+      typeof formatJalali === "function"
+        ? formatJalali(ev.created_at, { withTime: true })
+        : ev.created_at || "—";
+    const route = `${WATCH_PLATFORM[ev.platform] || ev.platform || "—"}→${
+      WATCH_CHANNEL[ev.channel] || CHANNEL_LABELS[ev.channel] || ev.channel || "—"
+    }`;
+    const msg = (ev.message || "").trim() || (ev.destination ? String(ev.destination) : "—");
+    tr.innerHTML = `
+      <td class="mono">${escapeHtml(when)}</td>
+      <td>${escapeHtml(WATCH_ACTION[ev.action] || ev.action || "—")}</td>
+      <td>${escapeHtml(ev.filter_name || "—")}</td>
+      <td>${escapeHtml(route)}</td>
+      <td>${ev.found_count || 0}</td>
+      <td>${ev.new_count || 0}</td>
+      <td>${ev.sent_count || 0}</td>
+      <td><span class="pill ${
+        ev.status === "success" ? "ok" : ev.status === "failure" || ev.status === "skipped" ? "warn" : ""
+      }">${escapeHtml(WATCH_STATUS[ev.status] || ev.status || "—")}</span></td>
+      <td class="watch-msg" title="${escapeHtml(msg)}">${escapeHtml(msg)}</td>
     `;
-    els.watchList.append(row);
+    tbody.append(tr);
   }
+  table.append(tbody);
+  els.watchList.append(table);
 }
 
 function render() {
@@ -597,7 +627,7 @@ async function loadPayments() {
 }
 
 async function loadWatchLog() {
-  const data = await api(`/api/admin/users/${userId}/watch-events?limit=80`);
+  const data = await api(`/api/admin/users/${userId}/watch-events?limit=20`);
   state.watchEvents = data.events || [];
   renderWatchLog();
 }

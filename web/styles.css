@@ -1199,23 +1199,45 @@ select[multiple] { min-height: 120px; }
   background: rgba(0, 0, 0, 0.2);
 }
 
-.invoice-list { display: grid; gap: 10px; margin-top: 12px; }
-.watch-log-list { display: grid; gap: 8px; margin-top: 10px; }
-.watch-log-item {
+.watch-table-wrap {
+  margin-top: 10px;
+  overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
 }
-.watch-log-item.failure {
-  border-color: rgba(255, 120, 120, 0.35);
+.watch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
 }
-.watch-log-item.partial {
-  border-color: rgba(255, 190, 90, 0.35);
+.watch-table th,
+.watch-table td {
+  padding: 8px 10px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
 }
-.watch-log-item.skipped {
-  opacity: 0.78;
+.watch-table thead th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+  color: var(--muted, #9aa3b2);
 }
+.watch-table tbody tr:last-child td { border-bottom: none; }
+.watch-table tbody tr.failure { background: rgba(255, 120, 120, 0.08); }
+.watch-table tbody tr.partial { background: rgba(255, 190, 90, 0.08); }
+.watch-table tbody tr.skipped { opacity: 0.72; }
+.watch-table .watch-msg {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watch-table .pill {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+.invoice-list { display: grid; gap: 10px; margin-top: 12px; }
 .invoice-card {
   border: 1px solid var(--line);
   border-radius: 16px;
