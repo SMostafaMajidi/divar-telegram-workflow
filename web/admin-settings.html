@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تنظیمات عمومی — ادمین</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=dark4">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ادمین</p>
+      <h1>تنظیمات عمومی</h1>
+    </div>
+    <div class="top-actions">
+      <span id="watch-pill" class="pill">پایش خاموش</span>
+      <button id="watch-btn" class="ghost" type="button">شروع پایش</button>
+      <div class="nav-menu">
+        <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
+          منو
+          <span class="menu-caret" aria-hidden="true"></span>
+        </button>
+        <div class="menu-dropdown" hidden role="menu">
+          <a class="menu-item" href="/admin" role="menuitem">داشبورد</a>
+          <a class="menu-item" href="/admin/plans" role="menuitem">پلن‌ها</a>
+          <a class="menu-item" href="/admin/payments" role="menuitem">پرداخت‌ها</a>
+          <a class="menu-item" href="/admin/payment-settings" role="menuitem">تنظیمات پرداخت</a>
+          <a class="menu-item" href="/pricing" role="menuitem">صفحه قیمت</a>
+          <hr class="menu-sep">
+          <button id="logout-btn" class="menu-item danger" type="button" role="menuitem">خروج</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <main class="layout single">
+    <section class="panel narrow-panel">
+      <p id="toast" class="toast" hidden></p>
+      <p class="meta">این مقادیر پیش‌فرض همه مشتریان است؛ برای هر مشتری می‌توانید در صفحه خودش مقدار جدا بگذارید.</p>
+      <form id="settings-form" class="settings">
+        <label>فاصله پایش (دقیقه)
+          <input name="poll_interval_minutes" type="number" min="1">
+        </label>
+        <label>تعداد آگهی برتر
+          <input name="best_count" type="number" min="1" max="10">
+        </label>
+        <label class="check">
+          <input name="send_photos" type="checkbox">
+          ارسال عکس
+        </label>
+        <button class="primary small" type="submit">ذخیره تنظیمات</button>
+      </form>
+    </section>
+  </main>
+  <script src="/dates.js?v=1"></script>
+  <script src="/admin-common.js?v=2"></script>
+  <script src="/admin-settings.js?v=1"></script>
+</body>
+</html>

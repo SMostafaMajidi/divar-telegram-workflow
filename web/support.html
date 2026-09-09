@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>شروع و پشتیبانی — دیوار واچر</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=dark7">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">دیوار واچر</p>
+      <h1>شروع و پشتیبانی</h1>
+    </div>
+    <div class="top-actions">
+      <a class="ghost small" href="/pricing">پلن‌ها</a>
+      <a class="ghost small" href="/">ورود</a>
+    </div>
+  </header>
+  <main class="layout single">
+    <section class="panel narrow-panel">
+      <ol class="portal-guide">
+        <li><b>ربات را استارت کن</b> — در تلگرام `/start` بزن و یوزرنیم/رمز پنل بساز.</li>
+        <li><b>وارد پنل شو</b> — با همان یوزر وارد سایت شو و اولین فیلتر را بساز.</li>
+        <li><b>مقصد تلگرام</b> — چت شخصی یا گروه/کانال را برای هر فیلتر انتخاب کن.</li>
+        <li><b>پلن بخر</b> — اگر آزمایشی تمام شد، از صفحهٔ قیمت فاکتور بگیر و کارت‌به‌کارت کن.</li>
+      </ol>
+      <div id="links" class="pay-box">
+        <p class="meta">در حال بارگذاری لینک ربات…</p>
+      </div>
+      <p class="meta"><a href="/terms">قوانین</a> · <a href="/cancel-policy">لغو اشتراک</a> · <a href="/app/billing">صورتحساب</a></p>
+    </section>
+  </main>
+  <script>
+    fetch("/api/status").then((r) => r.json()).then((s) => {
+      const box = document.getElementById("links");
+      const bot = s.bot_username ? `https://t.me/${s.bot_username}` : "";
+      const support = s.support_url || "";
+      box.innerHTML = `
+        <h3>لینک‌های مهم</h3>
+        ${bot ? `<p><a class="primary small" href="${bot}" target="_blank">باز کردن ربات</a></p>` : "<p class='meta'>ربات هنوز پیکربندی نشده.</p>"}
+        ${support ? `<p class="meta"><a href="${support}" target="_blank">چت پشتیبانی</a></p>` : "<p class='meta'>آیدی پشتیبانی را در تنظیمات سرور (SUPPORT_TELEGRAM) بگذارید.</p>"}
+        <p class="meta"><a href="/pricing">مشاهده پلن‌ها و قیمت</a></p>
+      `;
+    });
+  </script>
+</body>
+</html>

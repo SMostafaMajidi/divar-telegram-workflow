@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>پلن‌ها — ادمین</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=dark8">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ادمین</p>
+      <h1>مدیریت پلن‌ها</h1>
+    </div>
+    <div class="top-actions">
+      <div class="nav-menu">
+        <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
+          منو <span class="menu-caret" aria-hidden="true"></span>
+        </button>
+        <div class="menu-dropdown" hidden role="menu">
+          <a class="menu-item" href="/admin" role="menuitem">داشبورد</a>
+          <a class="menu-item" href="/admin/payments" role="menuitem">پرداخت‌ها</a>
+          <a class="menu-item" href="/admin/payment-settings" role="menuitem">تنظیمات پرداخت</a>
+          <a class="menu-item" href="/admin/settings" role="menuitem">تنظیمات عمومی</a>
+          <hr class="menu-sep">
+          <button id="logout-btn" class="menu-item danger" type="button" role="menuitem">خروج</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <main class="layout single">
+    <section class="panel">
+      <p id="toast" class="toast" hidden></p>
+      <div class="panel-head">
+        <div>
+          <h2>پلن‌ها</h2>
+          <p class="meta" style="margin:4px 0 0">نام، مبلغ، سقف فیلتر، سقف معیار و قابلیت‌ها را اینجا عوض کنید.</p>
+        </div>
+        <button id="new-btn" class="primary small" type="button">پلن جدید</button>
+      </div>
+      <div id="list" class="plan-admin-list"></div>
+    </section>
+  </main>
+
+  <dialog id="editor">
+    <form id="plan-form" method="dialog" class="settings-clean">
+      <header class="panel-head tight">
+        <h2 id="editor-title">ویرایش پلن</h2>
+        <button type="button" class="icon" id="close-editor" aria-label="بستن">×</button>
+      </header>
+      <input type="hidden" name="create" value="0">
+      <div class="field-grid">
+        <label>شناسه (انگلیسی)
+          <input name="id" required pattern="[a-z][a-z0-9_]{1,31}" placeholder="مثلاً starter">
+        </label>
+        <label>نام نمایشی
+          <input name="name" required placeholder="مثلاً استارتر">
+        </label>
+        <label class="span-2">توضیح کوتاه
+          <input name="tagline" placeholder="یک خط معرفی">
+        </label>
+        <label>مبلغ (تومان / ماه)
+          <input name="price_toman" type="number" min="0" step="1000" value="0">
+        </label>
+        <label>مدت (روز)
+          <input name="duration_days" type="number" min="1" value="30">
+        </label>
+        <label>سقف تعداد فیلتر
+          <input name="max_filters" type="number" min="0" max="100" value="3">
+        </label>
+        <label>سقف معیار روی هر فیلتر
+          <input name="max_criteria" type="number" min="0" max="50" value="0" placeholder="۰ = نامحدود">
+        </label>
+        <label>فاصله پایش (دقیقه)
+          <input name="poll_interval_minutes" type="number" min="1" value="5">
+        </label>
+        <label>ترتیب نمایش
+          <input name="sort_order" type="number" value="10">
+        </label>
+      </div>
+      <p class="hint">سقف معیار یعنی چند محدودیت اضافه (قیمت، سال، کارکرد، عبارت جستجو، …) روی یک فیلتر مجاز است. شهر و کلمات حذف حساب نمی‌شوند. مقدار ۰ یا خالی = نامحدود.</p>
+      <div class="toggle-row">
+        <label class="check"><input name="ai_enabled" type="checkbox"> هوش مصنوعی</label>
+        <label class="check"><input name="api_access" type="checkbox"> دسترسی API</label>
+        <label class="check"><input name="active" type="checkbox" checked> فعال در صفحه قیمت</label>
+      </div>
+      <label>قابلیت‌ها (هر خط یک مورد)
+        <textarea name="features" rows="5" placeholder="۳ فیلتر فعال"></textarea>
+      </label>
+      <footer class="row">
+        <button type="button" id="delete-btn" class="danger small" hidden>حذف</button>
+        <button type="submit" class="primary small">ذخیره پلن</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="/dates.js?v=2"></script>
+  <script src="/admin-common.js?v=2"></script>
+  <script src="/admin-plans.js?v=2"></script>
+</body>
+</html>

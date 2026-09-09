@@ -3,9 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ورود — دیوار واچر</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <title>ورود ادمین — دیوار واچر</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css?v=dark1">
 </head>
@@ -13,8 +11,8 @@
   <main class="login-shell">
     <section class="login-card">
       <p class="eyebrow">دیوار واچر</p>
-      <h1>ورود به پنل</h1>
-      <p class="hint">با یوزرنیم و رمزی که در ربات ساخته‌اید وارد شوید.</p>
+      <h1>ورود ادمین</h1>
+      <p class="hint">برای مدیریت مشتریان وارد شوید.</p>
       <form id="login-form">
         <label>یوزرنیم
           <input name="username" autocomplete="username" required>
@@ -25,15 +23,9 @@
         <button class="primary" type="submit">ورود</button>
       </form>
       <p id="toast" class="toast" hidden></p>
-      <p class="hint" id="bot-hint">در حال خواندن وضعیت سرویس…</p>
-      <p class="meta"><a href="/pricing">مشاهده پلن‌ها</a></p>
-      <ol class="steps login-steps">
-        <li>ربات را در تلگرام باز کنید و <b>/start</b> بزنید.</li>
-        <li>یوزرنیم و رمز دلخواه بسازید.</li>
-        <li>اینجا وارد شوید و فیلتر بسازید.</li>
-      </ol>
+      <p class="meta"><a href="/">ورود مشتری</a> · <a href="/pricing">پلن‌ها</a></p>
     </section>
   </main>
-  <script src="/app-login.js"></script>
+  <script src="/admin-login.js"></script>
 </body>
 </html>

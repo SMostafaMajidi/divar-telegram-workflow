@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import argparse
 
+import db
 from config_store import AppError, detect_telegram_chat, load_config, load_dotenv
 from notifier import TelegramNotifier
-from runner import build_notifier, send_best
+from runner import build_notifier, send_best_for_user
 
 
 def main() -> None:
     load_dotenv()
+    db.init_db()
     parser = argparse.ArgumentParser(description="Search Divar and send listings to Telegram")
     parser.add_argument(
         "command",
@@ -54,33 +56,40 @@ def main() -> None:
         return
 
     if args.command == "once":
-        try:
-            result = send_best()
-        except AppError as exc:
-            raise SystemExit(str(exc)) from exc
-        print(result["message"])
+        users = [u for u in db.list_users() if u.get("active") and u.get("ai_enabled")]
+        if not users:
+            raise SystemExit("No active users with AI enabled.")
+        for user in users:
+            try:
+                result = send_best_for_user(user)
+                print(f"@{user['telegram_username']}: {result['message']}")
+            except AppError as exc:
+                print(f"@{user['telegram_username']}: {exc}")
         return
 
     if args.command == "watch":
-        from config_store import format_slot_time, next_slot_at, poll_interval_seconds, seconds_until_next_slot
+        from config_store import format_slot_time, next_due_watch_users
         from runner import watch_tick
         import time
+        import db as database
 
-        print(f"watching on the clock every {poll_interval_seconds(config) // 60} min from 00:00")
+        print("watching per-user clock slots")
         include_now = True
         while True:
-            interval = poll_interval_seconds()
-            wait = seconds_until_next_slot(interval, include_now=include_now)
+            users = [bundle["user"] for bundle in database.active_users_with_filters()]
+            due, wait, when = next_due_watch_users(users, include_now=include_now)
             include_now = False
             if wait > 0:
-                print(f"next scan at {format_slot_time(next_slot_at(interval, include_now=False))}")
+                print(f"next scan at {format_slot_time(when)} ({len(due)} user(s) queued)")
                 try:
                     time.sleep(wait)
                 except KeyboardInterrupt:
                     print("\nStopped.")
                     return
+                users = [bundle["user"] for bundle in database.active_users_with_filters()]
+                due, _, when = next_due_watch_users(users, include_now=True)
             try:
-                result = watch_tick()
+                result = watch_tick(user_ids=[user["id"] for user in due] if due else [])
                 print(result["message"])
             except KeyboardInterrupt:
                 print("\nStopped.")

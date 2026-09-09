@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تنظیمات پرداخت — ادمین</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=dark10">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ادمین</p>
+      <h1>تنظیمات پرداخت</h1>
+    </div>
+    <div class="top-actions">
+      <div class="nav-menu">
+        <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
+          منو <span class="menu-caret" aria-hidden="true"></span>
+        </button>
+        <div class="menu-dropdown" hidden role="menu">
+          <a class="menu-item" href="/admin" role="menuitem">داشبورد</a>
+          <a class="menu-item" href="/admin/plans" role="menuitem">پلن‌ها</a>
+          <a class="menu-item" href="/admin/payments" role="menuitem">پرداخت‌ها</a>
+          <hr class="menu-sep">
+          <button id="logout-btn" class="menu-item danger" type="button" role="menuitem">خروج</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <main class="layout single">
+    <section class="panel narrow-panel">
+      <p id="toast" class="toast" hidden></p>
+      <p class="meta">این اطلاعات روی صفحه قیمت و صورتحساب مشتری نشان داده می‌شود.</p>
+      <form id="pay-form" class="settings-clean">
+        <label>شماره کارت
+          <input name="card_number" dir="ltr" placeholder="6037-...." autocomplete="off">
+        </label>
+        <label>نام صاحب کارت
+          <input name="card_holder" placeholder="نام و نام خانوادگی">
+        </label>
+        <label>نام بانک (اختیاری)
+          <input name="bank_name" placeholder="مثلاً ملت">
+        </label>
+        <label>شبا (اختیاری)
+          <input name="sheba" dir="ltr" placeholder="IR...." autocomplete="off">
+        </label>
+        <label>آیدی پشتیبانی تلگرام
+          <input name="support_telegram" dir="ltr" placeholder="without @" autocomplete="off">
+        </label>
+        <label>متن راهنمای پرداخت
+          <textarea name="note" rows="3" placeholder="مبلغ را کارت‌به‌کارت کنید و شناسه فاکتور را بنویسید."></textarea>
+        </label>
+        <button class="primary small" type="submit">ذخیره</button>
+      </form>
+      <div class="pay-box">
+        <h3>پیش‌نمایش کارت</h3>
+        <div id="card-preview"></div>
+      </div>
+    </section>
+  </main>
+  <script src="/dates.js?v=2"></script>
+  <script src="/bank-card.js?v=2"></script>
+  <script src="/admin-common.js?v=2"></script>
+  <script src="/admin-payment-settings.js?v=3"></script>
+</body>
+</html>

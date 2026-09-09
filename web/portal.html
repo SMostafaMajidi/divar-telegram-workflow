@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>پنل مشتری — دیوار واچر</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=dark6">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">پنل مشتری</p>
+      <h1 id="welcome">حساب من</h1>
+      <p id="plan-line" class="meta topbar-meta"></p>
+    </div>
+    <div class="top-actions">
+      <span id="ai-pill" class="pill" hidden>هوش مصنوعی</span>
+      <div class="nav-menu">
+        <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
+          منو
+          <span class="menu-caret" aria-hidden="true"></span>
+        </button>
+        <div class="menu-dropdown" hidden role="menu">
+          <button id="run-btn" class="menu-item" type="button" role="menuitem" hidden>ارسال بهترین‌ها</button>
+          <a class="menu-item" href="/pricing" role="menuitem">پلن‌ها</a>
+          <a class="menu-item" href="/app/billing" role="menuitem">صورتحساب</a>
+          <a class="menu-item" href="/support" role="menuitem">پشتیبانی</a>
+          <a id="api-docs-menu" class="menu-item" href="/app/api" role="menuitem" hidden>مستندات API</a>
+          <hr class="menu-sep">
+          <button id="logout-btn" class="menu-item danger" type="button" role="menuitem">خروج</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout portal-layout">
+    <section class="panel filters-panel">
+      <div id="toast" class="toast" hidden></div>
+
+      <ol class="portal-guide">
+        <li><b>پیام‌رسان را وصل کن</b> — ربات فعال را استارت/لاگین کن.</li>
+        <li><b>فیلتر بساز</b> — دسته، شهر و شرایط آگهی را مشخص کن.</li>
+        <li><b>مقصدها را انتخاب کن</b> — یک فیلتر می‌تواند به چند چت در چند پیام‌رسان برود.</li>
+      </ol>
+
+      <div class="panel-head tight" style="margin-top:8px">
+        <div>
+          <h2 style="margin:0;font-size:16px">پیام‌رسان‌ها</h2>
+          <p class="meta" style="margin:4px 0 0">ربات‌های فعال را وصل کنید تا چت‌ها قابل انتخاب شوند.</p>
+        </div>
+      </div>
+      <div id="messenger-list" class="messenger-grid"></div>
+
+      <div class="panel-head">
+        <div>
+          <h2>فیلترهای من</h2>
+          <p id="filter-quota" class="meta" style="margin:4px 0 0"></p>
+        </div>
+        <button id="add-btn" class="primary small" type="button">افزودن فیلتر</button>
+      </div>
+
+      <div id="filter-list" class="filter-list"></div>
+
+      <div class="panel-head" style="margin-top:18px">
+        <div>
+          <h2>پشتیبانی</h2>
+          <p class="meta" style="margin:4px 0 0">تیکت بزنید؛ پاسخ‌ها همین‌جا می‌آید.</p>
+        </div>
+        <button id="ticket-add-btn" class="ghost small" type="button">تیکت جدید</button>
+      </div>
+      <div id="ticket-list" class="ticket-list"></div>
+
+      <div class="portal-foot">
+        <p id="feed-link" class="meta"></p>
+        <p class="meta"><a id="api-docs-foot" href="/app/api" hidden>مستندات API</a><span id="api-docs-sep" hidden> · </span><a href="/app/billing">صورتحساب</a> · <a href="/pricing">پلن‌ها</a> · <a href="/support">پشتیبانی</a></p>
+      </div>
+    </section>
+
+    <section class="panel results-panel">
+      <div class="panel-head">
+        <div>
+          <h2 id="results-title">آگهی‌های اخیر</h2>
+          <p class="meta" style="margin:4px 0 0">همان‌هایی که به مقصدهای فیلتر هم رفته‌اند</p>
+        </div>
+        <span id="results-meta" class="muted"></span>
+      </div>
+      <div id="results" class="results"></div>
+    </section>
+  </main>
+
+  <dialog id="editor">
+    <form id="filter-form" method="dialog">
+      <header>
+        <h2 id="editor-title">فیلتر جدید</h2>
+        <button type="button" class="icon" id="close-editor" aria-label="بستن">×</button>
+      </header>
+      <input type="hidden" name="id">
+      <input type="hidden" name="category" value="light">
+      <label>نام فیلتر
+        <input name="name" required placeholder="مثلاً پراید اصفهان">
+      </label>
+      <div class="field category-picker">
+        <span>دسته‌بندی دیوار</span>
+        <p id="category-selected" class="category-selected">سواری و وانت</p>
+        <input id="category-search" autocomplete="off" placeholder="جستجوی دسته">
+        <div id="category-crumb" class="category-crumb"></div>
+        <div id="category-grid" class="category-grid"></div>
+      </div>
+      <label>عبارت جستجو (اختیاری)
+        <input name="query" placeholder="خالی = همه آگهی‌های این دسته">
+      </label>
+      <div class="field">
+        <span>شهرها</span>
+        <div id="city-chips" class="chips"></div>
+        <input id="city-input" autocomplete="off" placeholder="جستجوی شهر">
+        <div id="city-suggest" class="suggest" hidden></div>
+        <div id="city-popular" class="popular"></div>
+      </div>
+      <div id="divar-fields" class="divar-fields"></div>
+      <div class="field">
+        <span>کلمات حذف از عنوان</span>
+        <div id="exclude-chips" class="chips"></div>
+        <input id="exclude-input" placeholder="کلمه و Enter">
+      </div>
+      <div class="field dest-builder">
+        <span>مقصدهای ارسال</span>
+        <div id="dest-list" class="dest-list"></div>
+        <div class="dest-add-row">
+          <select id="dest-channel"></select>
+          <select id="dest-chat"></select>
+          <button type="button" class="ghost small" id="dest-add-btn">افزودن</button>
+        </div>
+        <p class="hint">اول پیام‌رسان، بعد چت. می‌توانید چند مقصد از چند پیام‌رسان اضافه کنید.</p>
+      </div>
+      <input type="hidden" name="chat_id" id="filter-chat" value="">
+      <div class="row">
+        <label>تعداد صفحات دیوار
+          <input name="max_pages" type="number" min="1" max="8" value="3">
+        </label>
+        <label class="check end">
+          <input name="enabled" type="checkbox" checked>
+          فعال باشد
+        </label>
+      </div>
+      <footer>
+        <button type="button" id="preview-form-btn" class="ghost">پیش‌نمایش</button>
+        <button type="submit" class="primary">ذخیره فیلتر</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="ticket-editor">
+    <form id="ticket-form" method="dialog">
+      <header>
+        <h2 id="ticket-editor-title">تیکت جدید</h2>
+        <button type="button" class="icon" id="close-ticket-editor" aria-label="بستن">×</button>
+      </header>
+      <input type="hidden" id="ticket-id" value="">
+      <div id="ticket-compose" class="ticket-compose">
+        <label>موضوع
+          <input id="ticket-subject" required placeholder="مثلاً مشکل ارسال به بله">
+        </label>
+        <label>پیام
+          <textarea id="ticket-body" rows="5" required placeholder="توضیح مشکل یا سوال…"></textarea>
+        </label>
+      </div>
+      <div id="ticket-thread" class="ticket-thread" hidden></div>
+      <div id="ticket-reply-box" class="ticket-reply-box" hidden>
+        <label>پاسخ شما
+          <textarea id="ticket-reply" rows="3" placeholder="پیام بعدی…"></textarea>
+        </label>
+      </div>
+      <footer>
+        <button type="button" id="ticket-close-btn" class="ghost" hidden>بستن تیکت</button>
+        <button type="submit" class="primary" id="ticket-submit-btn">ارسال</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="/dates.js?v=1"></script>
+  <script src="/portal.js?v=12"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>پرداخت‌ها — ادمین</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=dark9">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ادمین</p>
+      <h1>پرداخت‌ها</h1>
+    </div>
+    <div class="top-actions">
+      <div class="nav-menu">
+        <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
+          منو <span class="menu-caret" aria-hidden="true"></span>
+        </button>
+        <div class="menu-dropdown" hidden role="menu">
+          <a class="menu-item" href="/admin" role="menuitem">داشبورد</a>
+          <a class="menu-item" href="/admin/plans" role="menuitem">پلن‌ها</a>
+          <a class="menu-item" href="/admin/payment-settings" role="menuitem">تنظیمات پرداخت</a>
+          <a class="menu-item" href="/admin/settings" role="menuitem">تنظیمات</a>
+          <hr class="menu-sep">
+          <button id="logout-btn" class="menu-item danger" type="button" role="menuitem">خروج</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <main class="layout single">
+    <section class="panel">
+      <p id="toast" class="toast" hidden></p>
+      <div class="panel-head">
+        <h2>فاکتورها</h2>
+        <select id="status-filter">
+          <option value="awaiting_review">در صف تأیید</option>
+          <option value="pending">در انتظار پرداخت</option>
+          <option value="paid">پرداخت‌شده</option>
+          <option value="rejected">رد شده</option>
+          <option value="">همه</option>
+        </select>
+      </div>
+      <div id="list" class="invoice-list"></div>
+    </section>
+  </main>
+  <script src="/dates.js?v=2"></script>
+  <script src="/admin-common.js?v=2"></script>
+  <script src="/admin-payments.js?v=4"></script>
+</body>
+</html>

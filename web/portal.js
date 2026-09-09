@@ -14,10 +14,17 @@ const DEFAULT_EXCLUDE = [
   "زنگ زدگی",
 ];
 
+const CHANNEL_LABELS = { telegram: "تلگرام", bale: "بله" };
+
 const state = {
   filters: [],
-  status: {},
   chats: [],
+  messengers: [],
+  destinations: [],
+  tickets: [],
+  activeTicket: null,
+  status: {},
+  user: null,
   categoryTree: [],
   categoryFlat: [],
   categoryTrail: [],
@@ -42,24 +49,42 @@ const els = {
   cityPopular: $("#city-popular"),
   excludeInput: $("#exclude-input"),
   excludeChips: $("#exclude-chips"),
-  telegramPill: $("#telegram-pill"),
-  llmPill: $("#llm-pill"),
-  botPill: $("#bot-pill"),
-  watchPill: $("#watch-pill"),
-  watchBtn: $("#watch-btn"),
+  aiPill: $("#ai-pill"),
   runBtn: $("#run-btn"),
   addBtn: $("#add-btn"),
-  settings: $("#settings-form"),
-  telegramSetup: $("#telegram-setup"),
-  telegramHint: $("#telegram-setup-hint"),
-  detectChatBtn: $("#detect-chat-btn"),
-  refreshChatsBtn: $("#refresh-chats-btn"),
-  chatList: $("#chat-list"),
+  logoutBtn: $("#logout-btn"),
   categorySearch: $("#category-search"),
   categoryGrid: $("#category-grid"),
   categoryCrumb: $("#category-crumb"),
   categorySelected: $("#category-selected"),
   divarFields: $("#divar-fields"),
+  apiKey: null,
+  feedLink: $("#feed-link"),
+  welcome: $("#welcome"),
+  planLine: $("#plan-line"),
+  filterQuota: $("#filter-quota"),
+  apiDocsMenu: $("#api-docs-menu"),
+  apiDocsFoot: $("#api-docs-foot"),
+  apiDocsSep: $("#api-docs-sep"),
+  messengerList: $("#messenger-list"),
+  destList: $("#dest-list"),
+  destChannel: $("#dest-channel"),
+  destChat: $("#dest-chat"),
+  destAddBtn: $("#dest-add-btn"),
+  ticketList: $("#ticket-list"),
+  ticketAddBtn: $("#ticket-add-btn"),
+  ticketEditor: $("#ticket-editor"),
+  ticketForm: $("#ticket-form"),
+  ticketId: $("#ticket-id"),
+  ticketSubject: $("#ticket-subject"),
+  ticketBody: $("#ticket-body"),
+  ticketCompose: $("#ticket-compose"),
+  ticketThread: $("#ticket-thread"),
+  ticketReplyBox: $("#ticket-reply-box"),
+  ticketReply: $("#ticket-reply"),
+  ticketCloseBtn: $("#ticket-close-btn"),
+  ticketSubmitBtn: $("#ticket-submit-btn"),
+  ticketEditorTitle: $("#ticket-editor-title"),
 };
 
 function el(tag, attrs = {}, children = []) {
@@ -82,10 +107,15 @@ function el(tag, attrs = {}, children = []) {
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  if (res.status === 401) {
+    location.href = "/";
+    throw new Error("نیاز به ورود");
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "خطا در ارتباط با سرور");
   return data;
@@ -107,31 +137,154 @@ function priceText(filter) {
 }
 
 function chatLabel(chat) {
-  const kinds = {
-    private: "خصوصی",
-    group: "گروه",
-    supergroup: "گروه",
-    channel: "کانال",
-  };
+  const kinds = { private: "خصوصی", group: "گروه", supergroup: "گروه", channel: "کانال" };
   const kind = kinds[chat.type] || "";
+  const channel = CHANNEL_LABELS[chat.channel] || chat.channel || "";
   const name = chat.name || (chat.username ? `@${chat.username}` : chat.id);
-  return kind ? `${name} · ${kind}` : String(name);
+  const base = kind ? `${name} · ${kind}` : String(name);
+  return channel ? `${channel} · ${base}` : base;
+}
+
+function destKey(d) {
+  return `${d.channel || "telegram"}:${d.chat_id}`;
+}
+
+function formatDestinations(filter) {
+  const dests = filter.destinations || [];
+  if (!dests.length) {
+    return filter.chat_id ? chatLabel({ id: filter.chat_id, channel: "telegram", type: "private" }) : "بدون مقصد";
+  }
+  return dests
+    .map((d) => {
+      const chat = state.chats.find(
+        (c) => c.channel === (d.channel || "telegram") && String(c.id) === String(d.chat_id),
+      );
+      return chat
+        ? chatLabel(chat)
+        : `${CHANNEL_LABELS[d.channel] || d.channel} · ${d.chat_id}`;
+    })
+    .join(" · ");
+}
+
+function fillChannelSelect(select, selected) {
+  if (!select) return;
+  select.replaceChildren();
+  const channels = state.messengers.length
+    ? state.messengers.map((m) => m.channel)
+    : ["telegram"];
+  for (const ch of channels) {
+    const label = CHANNEL_LABELS[ch] || ch;
+    select.append(el("option", { value: ch, text: label }));
+  }
+  if (selected && channels.includes(selected)) select.value = selected;
+  else if (channels.length) select.value = channels[0];
+}
+
+function fillDestChatSelect(select, channel, selected) {
+  if (!select) return;
+  const ch = channel || "telegram";
+  const matched = state.chats.filter((c) => (c.channel || "telegram") === ch);
+  select.replaceChildren(
+    el("option", {
+      value: "",
+      text: matched.length ? "انتخاب چت" : "چتی برای این پیام‌رسان نیست — ربات را استارت/لاگین کنید",
+    }),
+  );
+  for (const chat of matched) {
+    select.append(el("option", { value: chat.id, text: chatLabel(chat) }));
+  }
+  if (selected) {
+    if (![...select.options].some((o) => o.value === String(selected))) {
+      select.append(el("option", { value: selected, text: selected }));
+    }
+    select.value = String(selected);
+  } else if (matched.length === 1) {
+    select.value = String(matched[0].id);
+  }
+}
+
+async function refreshMessengerState() {
+  const [chats, messengers, me] = await Promise.all([
+    api("/api/chats"),
+    api("/api/messengers"),
+    api("/api/me"),
+  ]);
+  state.chats = chats.chats || [];
+  state.messengers = messengers.messengers || me.messengers || [];
+  if (me.user) state.user = me.user;
+  renderMessengers();
+}
+
+function renderDestList() {
+  if (!els.destList) return;
+  els.destList.replaceChildren();
+  if (!state.destinations.length) {
+    els.destList.append(el("p", { class: "meta", text: "هنوز مقصدی اضافه نشده." }));
+    return;
+  }
+  for (const dest of state.destinations) {
+    const chat = state.chats.find(
+      (c) => (c.channel || "telegram") === dest.channel && String(c.id) === String(dest.chat_id),
+    );
+    const label = chat
+      ? chatLabel(chat)
+      : `${CHANNEL_LABELS[dest.channel] || dest.channel} · ${dest.chat_id}`;
+    els.destList.append(
+      el("div", { class: "dest-chip" }, [
+        el("span", { text: label }),
+        el("button", {
+          type: "button",
+          class: "ghost small",
+          text: "حذف",
+          onClick: () => {
+            state.destinations = state.destinations.filter((d) => destKey(d) !== destKey(dest));
+            renderDestList();
+          },
+        }),
+      ]),
+    );
+  }
+}
+
+function renderMessengers() {
+  if (!els.messengerList) return;
+  els.messengerList.replaceChildren();
+  if (!state.messengers.length) {
+    els.messengerList.append(el("p", { class: "meta", text: "فعلاً ربات فعالی تنظیم نشده." }));
+    return;
+  }
+  for (const m of state.messengers) {
+    els.messengerList.append(
+      el("a", {
+        class: `messenger-card ${m.linked ? "linked" : ""}`,
+        href: m.deep_link || "#",
+        target: "_blank",
+        rel: "noreferrer",
+      }, [
+        el("strong", { text: m.label }),
+        el("span", {
+          class: "meta",
+          text: m.linked ? "متصل است · برای چت‌های بیشتر باز کنید" : "برای اتصال استارت/لاگین کنید",
+        }),
+      ]),
+    );
+  }
 }
 
 function fillChatSelect(select, selected) {
-  select.replaceChildren(el("option", { value: "", text: "چت پیش‌فرض" }));
+  if (!select) return;
+  const privateId = String(state.user?.telegram_chat_id || "");
+  select.replaceChildren(el("option", { value: "", text: "چت شخصی (پیش‌فرض)" }));
   for (const chat of state.chats) {
+    if (privateId && String(chat.id) === privateId && (chat.channel || "telegram") === "telegram") continue;
     select.append(el("option", { value: chat.id, text: chatLabel(chat) }));
   }
-  if (selected && !state.chats.some((item) => String(item.id) === String(selected))) {
-    select.append(el("option", { value: selected, text: selected }));
+  const selectedValue =
+    selected && privateId && String(selected) === privateId ? "" : selected || "";
+  if (selectedValue && ![...select.options].some((item) => item.value === String(selectedValue))) {
+    select.append(el("option", { value: selectedValue, text: selectedValue }));
   }
-  select.value = selected || "";
-}
-
-function categoryLabel(slug) {
-  const item = state.categoryFlat.find((entry) => entry.slug === slug);
-  return item?.path || slug || "بدون دسته";
+  select.value = selectedValue || "";
 }
 
 function findTrail(slug, nodes = state.categoryTree, trail = []) {
@@ -154,7 +307,7 @@ function setCategory(slug, { drill = false } = {}) {
   }
   const node = state.categoryFlat.find((item) => item.slug === slug);
   els.form.category.value = slug;
-  els.categorySelected.textContent = node?.path || slug || "یک دسته انتخاب کن";
+  els.categorySelected.textContent = node?.path || slug || "یک دسته انتخاب کنید";
   if (drill) {
     const trail = findTrail(slug);
     const last = trail[trail.length - 1];
@@ -259,13 +412,33 @@ function renderCategoryPicker() {
 function renderFilters() {
   els.list.replaceChildren();
   if (!state.filters.length) {
-    els.list.append(el("p", { class: "empty", text: "هنوز فیلتری نساختی." }));
+    els.list.append(
+      el("div", { class: "empty-state" }, [
+        el("h3", { text: "هنوز فیلتری نداری" }),
+        el("p", {
+          class: "meta",
+          text: "با یک فیلتر شروع کن؛ آگهی‌های تازه به مقصدهایی که انتخاب می‌کنی می‌رسند.",
+        }),
+        el("button", {
+          class: "primary",
+          type: "button",
+          text: "ساخت اولین فیلتر",
+          onClick: () => openEditor(),
+        }),
+      ]),
+    );
     return;
   }
   for (const filter of state.filters) {
-    const card = el("article", { class: `card ${filter.enabled ? "" : "off"}` }, [
+    const card = el("article", { class: `card filter-card ${filter.enabled ? "" : "off"}` }, [
       el("div", { class: "card-top" }, [
-        el("h3", { text: filter.name }),
+        el("div", {}, [
+          el("h3", { text: filter.name }),
+          el("p", {
+            class: "meta",
+            text: `${filter.category_path || filter.category} · ${filter.cities.join("، ") || "بدون شهر"}`,
+          }),
+        ]),
         el("label", { class: "check" }, [
           el("input", {
             type: "checkbox",
@@ -286,29 +459,10 @@ function renderFilters() {
         ]),
       ]),
       el("p", {
-        class: "meta",
-        text: `${filter.category_path || filter.category} · ${filter.query || "بدون عبارت"} · ${filter.cities.join("، ")} · ${priceText(filter)}`,
+        class: "meta filter-meta",
+        text: `${filter.query ? `جستجو: ${filter.query} · ` : ""}${priceText(filter)}`,
       }),
-      el("label", { class: "chat-target" }, [
-        "ارسال به چت",
-        (() => {
-          const select = el("select");
-          fillChatSelect(select, filter.chat_id);
-          select.addEventListener("change", async () => {
-            try {
-              const data = await api(`/api/filters/${filter.id}/chat`, {
-                method: "POST",
-                body: { chat_id: select.value },
-              });
-              replaceFilter(data.filter);
-              toast("مقصد این فیلتر ذخیره شد", "ok");
-            } catch (err) {
-              toast(err.message, "err");
-            }
-          });
-          return select;
-        })(),
-      ]),
+      el("p", { class: "meta", text: `مقصدها: ${formatDestinations(filter)}` }),
       el("div", { class: "card-actions" }, [
         el("button", {
           class: "ghost small",
@@ -342,59 +496,43 @@ function replaceFilter(updated) {
 }
 
 function renderStatus() {
-  const ready = !!state.status.telegram_ready;
-  const hasToken = !!state.status.telegram_token;
-  const bot = state.status.bot_username;
-  els.telegramPill.textContent = ready
-    ? "تلگرام وصل است"
-    : hasToken
-      ? "مقصد چت ندارد"
-      : "تلگرام تنظیم نشده";
-  els.telegramPill.className = `pill ${ready ? "ok" : "warn"}`;
-  els.llmPill.textContent = state.status.llm_ready
-    ? `مدل ${state.status.llm_model || ""}`.trim()
-    : "مدل تنظیم نشده";
-  els.llmPill.className = `pill ${state.status.llm_ready ? "ok" : "warn"}`;
-  els.botPill.textContent = state.status.bot_running ? "ربات روشن" : "ربات خاموش";
-  els.botPill.className = `pill ${state.status.bot_running ? "ok" : ""}`;
-  els.watchPill.textContent = state.status.watching ? "پایش روشن" : "پایش خاموش";
-  els.watchPill.className = `pill ${state.status.watching ? "ok" : ""}`;
-  els.watchBtn.textContent = state.status.watching ? "توقف پایش" : "شروع پایش";
-  els.settings.poll_interval_minutes.value = state.status.poll_interval_minutes || 3;
-  els.settings.best_count.value = state.status.best_count || 5;
-  els.settings.send_photos.checked = !!state.status.send_photos;
-
-  const needsChat = hasToken && !state.status.telegram_chat;
-  els.telegramSetup.hidden = !hasToken;
-  if (hasToken) {
-    const botLabel = bot ? `@${bot}` : "ربات";
-    els.telegramHint.replaceChildren(
-      bot
-        ? el("a", { href: `https://t.me/${bot}`, target: "_blank", text: botLabel })
-        : botLabel,
-      " را به گروه یا چت مورد نظر اضافه کن، ",
-      el("b", { text: "/start" }),
-      " بزن، بعد لیست چت‌ها را تازه کن و برای هر فیلتر مقصد را انتخاب کن.",
-      needsChat ? " هنوز مقصد پیش‌فرض ذخیره نشده." : ""
-    );
+  if (!state.user) return;
+  const name = state.user.login_username || state.user.telegram_username || "حساب من";
+  els.welcome.textContent = `@${name}`;
+  const plan = state.user.plan_name || state.user.plan_id || "—";
+  const status = state.user.subscription_status || "—";
+  const max = state.user.max_filters;
+  const used = state.filters.length;
+  const exp = state.user.expires_at ? formatJalali(state.user.expires_at) : null;
+  if (els.planLine) {
+    els.planLine.textContent = exp
+      ? `پلن ${plan} · ${status} · تا ${exp}`
+      : `پلن ${plan} · ${status}`;
   }
-  renderChatList();
-}
-
-function renderChatList() {
-  if (!els.chatList) return;
-  els.chatList.replaceChildren();
-  if (!state.chats.length) {
-    els.chatList.append(el("li", { text: "هنوز چتی ثبت نشده. /start بزن و تازه کن." }));
-    return;
+  if (els.filterQuota) {
+    const parts = [max != null ? `${used} از ${max} فیلتر` : `${used} فیلتر`];
+    if (state.user.max_criteria != null && Number(state.user.max_criteria) > 0) {
+      parts.push(`تا ${state.user.max_criteria} معیار روی هر فیلتر`);
+    }
+    els.filterQuota.textContent = parts.join(" · ");
   }
-  for (const chat of state.chats) {
-    const isDefault = String(chat.id) === String(state.status.default_chat_id || "");
-    els.chatList.append(
-      el("li", {
-        text: `${chatLabel(chat)}${isDefault ? " (پیش‌فرض)" : ""}`,
-      })
-    );
+  const aiOn = !!state.user.ai_enabled;
+  if (els.aiPill) {
+    els.aiPill.hidden = !aiOn;
+    els.aiPill.textContent = "هوش مصنوعی فعال";
+    els.aiPill.className = "pill ok";
+  }
+  if (els.runBtn) {
+    els.runBtn.hidden = !aiOn;
+    els.runBtn.disabled = !aiOn;
+  }
+  const apiOn = !!state.user.api_access;
+  if (els.apiDocsMenu) els.apiDocsMenu.hidden = !apiOn;
+  if (els.apiDocsFoot) els.apiDocsFoot.hidden = !apiOn;
+  if (els.apiDocsSep) els.apiDocsSep.hidden = !apiOn;
+  if (els.feedLink) {
+    const slug = state.user.public_slug || state.user.login_username || state.user.telegram_username;
+    els.feedLink.innerHTML = `صفحه اختصاصی: <a href="/u/${slug}" target="_blank">/u/${slug}</a>`;
   }
 }
 
@@ -443,6 +581,19 @@ function renderChips(root, values, onRemove) {
 
 function formPayload() {
   const data = new FormData(els.form);
+  const destinations = state.destinations.length
+    ? state.destinations.map((d) => ({
+        channel: d.channel || "telegram",
+        chat_id: String(d.chat_id),
+        enabled: d.enabled !== false,
+      }))
+    : [];
+  const legacyChat =
+    destinations.find((d) => d.channel === "telegram")?.chat_id ||
+    destinations[0]?.chat_id ||
+    data.get("chat_id") ||
+    "";
+  if (els.form.chat_id) els.form.chat_id.value = legacyChat;
   return {
     id: data.get("id") || undefined,
     name: data.get("name"),
@@ -451,8 +602,9 @@ function formPayload() {
     exclude_title: state.exclude,
     max_pages: data.get("max_pages") || 3,
     enabled: els.form.enabled.checked,
-    chat_id: data.get("chat_id") || "",
     category: data.get("category") || "",
+    chat_id: legacyChat,
+    destinations,
     fields: collectDivarFields(),
   };
 }
@@ -656,7 +808,7 @@ function collectDivarFields() {
   return out;
 }
 
-function openEditor(filter = null) {
+async function openEditor(filter = null) {
   state.editing = filter;
   els.form.reset();
   els.form.id.value = filter?.id || "";
@@ -664,7 +816,34 @@ function openEditor(filter = null) {
   els.form.query.value = filter?.query || "";
   els.form.max_pages.value = filter?.max_pages || 3;
   els.form.enabled.checked = filter ? !!filter.enabled : true;
-  fillChatSelect(els.form.chat_id, filter?.chat_id || "");
+  try {
+    await refreshMessengerState();
+  } catch (err) {
+    toast(err.message, "err");
+  }
+  state.destinations = (filter?.destinations || [])
+    .filter((d) => d && d.chat_id)
+    .map((d) => ({
+      channel: d.channel || "telegram",
+      chat_id: String(d.chat_id),
+      enabled: d.enabled !== false,
+    }));
+  if (!state.destinations.length && filter?.chat_id) {
+    state.destinations = [
+      { channel: "telegram", chat_id: String(filter.chat_id), enabled: true },
+    ];
+  }
+  const preferredChannel =
+    state.destinations[0]?.channel ||
+    state.messengers.find((m) => m.linked)?.channel ||
+    state.messengers[0]?.channel ||
+    "telegram";
+  fillChannelSelect(els.destChannel, preferredChannel);
+  fillDestChatSelect(els.destChat, els.destChannel?.value || preferredChannel);
+  renderDestList();
+  if (els.form.chat_id) {
+    els.form.chat_id.value = state.destinations[0]?.chat_id || filter?.chat_id || "";
+  }
   state.divarValues = { ...(filter?.fields || {}) };
   const slug = filter?.category || "light";
   els.form.category.value = slug;
@@ -794,6 +973,10 @@ async function removeFilter(filter) {
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = formPayload();
+  if (!payload.destinations.length) {
+    toast("حداقل یک مقصد ارسال اضافه کنید", "err");
+    return;
+  }
   try {
     const method = payload.id ? "PUT" : "POST";
     const path = payload.id ? `/api/filters/${payload.id}` : "/api/filters";
@@ -805,6 +988,25 @@ els.form.addEventListener("submit", async (event) => {
   } catch (err) {
     toast(err.message, "err");
   }
+});
+
+els.destChannel?.addEventListener("change", () => {
+  fillDestChatSelect(els.destChat, els.destChannel.value);
+});
+
+els.destAddBtn?.addEventListener("click", () => {
+  const channel = els.destChannel?.value || "telegram";
+  const chatId = els.destChat?.value;
+  if (!chatId) {
+    toast("چت را انتخاب کنید", "err");
+    return;
+  }
+  if (state.destinations.some((d) => destKey(d) === destKey({ channel, chat_id: chatId }))) {
+    toast("این مقصد قبلاً اضافه شده", "err");
+    return;
+  }
+  state.destinations.push({ channel, chat_id: chatId, enabled: true });
+  renderDestList();
 });
 
 $("#preview-form-btn").addEventListener("click", async () => {
@@ -819,8 +1021,12 @@ $("#close-editor").addEventListener("click", () => els.editor.close());
 els.addBtn.addEventListener("click", () => openEditor());
 
 els.runBtn.addEventListener("click", async () => {
+  if (!state.user?.ai_enabled) {
+    toast("رتبه‌بندی هوشمند برای حساب شما فعال نیست. از پشتیبانی درخواست دهید.", "err");
+    return;
+  }
   els.runBtn.disabled = true;
-  toast("در حال انتخاب ۵ آگهی برتر…");
+  toast("در حال انتخاب آگهی‌های برتر…");
   try {
     const data = await api("/api/run", { method: "POST", body: {} });
     toast(data.message, "ok");
@@ -828,115 +1034,206 @@ els.runBtn.addEventListener("click", async () => {
   } catch (err) {
     toast(err.message, "err");
   } finally {
-    els.runBtn.disabled = false;
+    els.runBtn.disabled = !state.user?.ai_enabled;
   }
 });
 
-els.refreshChatsBtn.addEventListener("click", async () => {
-  els.refreshChatsBtn.disabled = true;
-  toast("در حال خواندن چت‌های ذخیره‌شده…");
-  try {
-    await loadChats();
-    renderFilters();
-    renderStatus();
-    toast(state.chats.length ? `${state.chats.length} چت پیدا شد` : "چتی نیست؛ /start بزن", "ok");
-  } catch (err) {
-    toast(err.message, "err");
-  } finally {
-    els.refreshChatsBtn.disabled = false;
-  }
-});
-
-els.detectChatBtn.addEventListener("click", async () => {
-  els.detectChatBtn.disabled = true;
-  toast("در حال خواندن Chat ID از تلگرام…");
-  try {
-    const data = await api("/api/telegram/detect-chat", { method: "POST", body: {} });
-    if (data.chats) state.chats = data.chats;
-    if (data.status) state.status = { ...state.status, ...data.status };
-    renderFilters();
-    renderStatus();
-    toast(
-      data.saved
-        ? `چت پیش‌فرض ذخیره شد: ${data.chat_id}`
-        : "چند چت هست؛ برای هر فیلتر مقصد را جدا انتخاب کن.",
-      "ok"
-    );
-  } catch (err) {
-    toast(err.message, "err");
-  } finally {
-    els.detectChatBtn.disabled = false;
-  }
-});
-
-els.watchBtn.addEventListener("click", async () => {
-  try {
-    const action = state.status.watching ? "stop" : "start";
-    const data = await api("/api/watch", { method: "POST", body: { action } });
-    state.status.watching = data.watching;
-    renderStatus();
-    toast(
-      data.watching
-        ? (data.next_watch_at
-          ? `پایش روشن شد؛ نوبت بعدی ساعت ${data.next_watch_at} — فقط تازه‌ترین‌ها`
-          : "پایش روشن شد؛ فقط آگهی‌های تازه می‌آیند.")
-        : "پایش متوقف شد",
-      "ok",
-    );
-  } catch (err) {
-    toast(err.message, "err");
-  }
-});
-
-els.settings.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    state.status = await api("/api/settings", {
-      method: "PUT",
-      body: {
-        poll_interval_minutes: Number(els.settings.poll_interval_minutes.value),
-        best_count: Number(els.settings.best_count.value),
-        send_photos: els.settings.send_photos.checked,
-      },
-    });
-    renderStatus();
-    toast("تنظیمات ذخیره شد", "ok");
-  } catch (err) {
-    toast(err.message, "err");
-  }
+els.logoutBtn?.addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST", body: {} });
+  location.href = "/";
 });
 
 els.categorySearch?.addEventListener("input", () => {
   renderCategoryPicker();
 });
 
-async function loadChats() {
-  const data = await api("/api/telegram/chats");
-  state.chats = data.chats || [];
+async function loadFeed() {
+  const data = await api("/api/feed");
+  renderResults(data.listings || [], "آگهی‌های اخیر", `${(data.listings || []).length} مورد`);
 }
 
-async function boot() {
+async function loadChats() {
+  const data = await api("/api/chats");
+  state.chats = data.chats || [];
+  renderFilters();
+}
+
+function ticketStatusLabel(status) {
+  return status === "closed" ? "بسته" : "باز";
+}
+
+function renderTickets() {
+  if (!els.ticketList) return;
+  els.ticketList.replaceChildren();
+  if (!state.tickets.length) {
+    els.ticketList.append(
+      el("p", { class: "meta", text: "هنوز تیکتی ندارید. اگر سوال یا مشکلی بود، تیکت جدید بزنید." }),
+    );
+    return;
+  }
+  for (const ticket of state.tickets) {
+    els.ticketList.append(
+      el("button", {
+        type: "button",
+        class: `ticket-card ${ticket.status === "closed" ? "off" : ""}`,
+        onClick: () => openTicket(ticket.id),
+      }, [
+        el("div", { class: "card-top" }, [
+          el("strong", { text: ticket.subject || "بدون موضوع" }),
+          el("span", {
+            class: `pill ${ticket.status === "closed" ? "warn" : "ok"}`,
+            text: ticketStatusLabel(ticket.status),
+          }),
+        ]),
+        el("p", {
+          class: "meta",
+          text: ticket.last_body
+            ? `${ticket.last_sender === "admin" ? "پشتیبانی" : "شما"}: ${ticket.last_body}`
+            : "بدون پیام",
+        }),
+      ]),
+    );
+  }
+}
+
+async function loadTickets() {
+  const data = await api("/api/tickets");
+  state.tickets = data.tickets || [];
+  renderTickets();
+}
+
+function renderTicketThread(ticket) {
+  if (!els.ticketThread) return;
+  els.ticketThread.replaceChildren();
+  for (const msg of ticket.messages || []) {
+    const mine = msg.sender === "user";
+    els.ticketThread.append(
+      el("div", { class: `ticket-bubble ${mine ? "mine" : "theirs"}` }, [
+        el("p", { class: "meta", text: mine ? "شما" : "پشتیبانی" }),
+        el("div", { text: msg.body }),
+        el("p", {
+          class: "meta",
+          text: typeof formatJalali === "function" ? formatJalali(msg.created_at) : msg.created_at,
+        }),
+      ]),
+    );
+  }
+  els.ticketThread.scrollTop = els.ticketThread.scrollHeight;
+}
+
+function openNewTicket() {
+  state.activeTicket = null;
+  if (els.ticketId) els.ticketId.value = "";
+  if (els.ticketSubject) els.ticketSubject.value = "";
+  if (els.ticketBody) els.ticketBody.value = "";
+  if (els.ticketReply) els.ticketReply.value = "";
+  if (els.ticketCompose) els.ticketCompose.hidden = false;
+  if (els.ticketThread) els.ticketThread.hidden = true;
+  if (els.ticketReplyBox) els.ticketReplyBox.hidden = true;
+  if (els.ticketCloseBtn) els.ticketCloseBtn.hidden = true;
+  if (els.ticketEditorTitle) els.ticketEditorTitle.textContent = "تیکت جدید";
+  if (els.ticketSubmitBtn) els.ticketSubmitBtn.textContent = "ارسال تیکت";
+  els.ticketEditor?.showModal();
+}
+
+async function openTicket(ticketId) {
   try {
-    const [filters, status, categories] = await Promise.all([
-      api("/api/filters"),
-      api("/api/status"),
-      api("/api/categories"),
-    ]);
-    state.filters = filters.filters || [];
-    state.status = status;
-    state.categoryTree = categories.tree || [];
-    state.categoryFlat = categories.flat || [];
-    try {
-      await loadChats();
-    } catch (_err) {
-      state.chats = [];
+    const data = await api(`/api/tickets/${ticketId}`);
+    const ticket = data.ticket;
+    state.activeTicket = ticket;
+    if (els.ticketId) els.ticketId.value = ticket.id;
+    if (els.ticketCompose) els.ticketCompose.hidden = true;
+    if (els.ticketThread) els.ticketThread.hidden = false;
+    if (els.ticketReplyBox) els.ticketReplyBox.hidden = ticket.status === "closed";
+    if (els.ticketCloseBtn) els.ticketCloseBtn.hidden = ticket.status === "closed";
+    if (els.ticketReply) els.ticketReply.value = "";
+    if (els.ticketEditorTitle) els.ticketEditorTitle.textContent = ticket.subject || "تیکت";
+    if (els.ticketSubmitBtn) {
+      els.ticketSubmitBtn.textContent = ticket.status === "closed" ? "بستن" : "ارسال پاسخ";
+      els.ticketSubmitBtn.hidden = ticket.status === "closed";
     }
-    renderFilters();
-    renderStatus();
-    renderResults([], "نتایج");
+    renderTicketThread(ticket);
+    els.ticketEditor?.showModal();
   } catch (err) {
     toast(err.message, "err");
   }
 }
 
+els.ticketAddBtn?.addEventListener("click", () => openNewTicket());
+$("#close-ticket-editor")?.addEventListener("click", () => els.ticketEditor?.close());
+
+els.ticketCloseBtn?.addEventListener("click", async () => {
+  const id = els.ticketId?.value;
+  if (!id) return;
+  try {
+    await api(`/api/tickets/${id}/close`, { method: "POST", body: {} });
+    toast("تیکت بسته شد", "ok");
+    els.ticketEditor?.close();
+    await loadTickets();
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+els.ticketForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    if (!state.activeTicket) {
+      const data = await api("/api/tickets", {
+        method: "POST",
+        body: {
+          subject: els.ticketSubject?.value || "",
+          body: els.ticketBody?.value || "",
+        },
+      });
+      toast("تیکت ثبت شد", "ok");
+      els.ticketEditor?.close();
+      await loadTickets();
+      if (data.ticket?.id) openTicket(data.ticket.id);
+      return;
+    }
+    const reply = (els.ticketReply?.value || "").trim();
+    if (!reply) {
+      toast("متن پاسخ را بنویسید", "err");
+      return;
+    }
+    const data = await api(`/api/tickets/${state.activeTicket.id}/messages`, {
+      method: "POST",
+      body: { body: reply },
+    });
+    state.activeTicket = data.ticket;
+    if (els.ticketReply) els.ticketReply.value = "";
+    renderTicketThread(data.ticket);
+    await loadTickets();
+    toast("پاسخ ارسال شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+async function boot() {
+  try {
+    const [me, filters, categories, chats, messengers] = await Promise.all([
+      api("/api/me"),
+      api("/api/filters"),
+      api("/api/categories"),
+      api("/api/chats"),
+      api("/api/messengers"),
+    ]);
+    state.user = me.user;
+    state.filters = filters.filters || [];
+    state.chats = chats.chats || [];
+    state.messengers = messengers.messengers || me.messengers || [];
+    state.categoryTree = categories.tree || [];
+    state.categoryFlat = categories.flat || [];
+    renderStatus();
+    renderMessengers();
+    renderFilters();
+    await Promise.all([loadFeed(), loadTickets()]);
+  } catch (err) {
+    location.replace("/");
+  }
+}
+
+bindNavMenus();
 boot();

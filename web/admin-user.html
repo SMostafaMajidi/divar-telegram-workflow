@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>مشتری — ادمین</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=dark12">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ادمین</p>
+      <h1 id="page-title">مشتری</h1>
+    </div>
+    <div class="top-actions">
+      <div class="nav-menu">
+        <button type="button" class="ghost menu-trigger" aria-expanded="false" aria-haspopup="true">
+          منو
+          <span class="menu-caret" aria-hidden="true"></span>
+        </button>
+        <div class="menu-dropdown" hidden role="menu">
+          <a class="menu-item" href="/admin" role="menuitem">داشبورد</a>
+          <a class="menu-item" href="/admin/plans" role="menuitem">پلن‌ها</a>
+          <a class="menu-item" href="/admin/payments" role="menuitem">پرداخت‌ها</a>
+          <a class="menu-item" href="/admin/payment-settings" role="menuitem">تنظیمات پرداخت</a>
+          <a class="menu-item" href="/admin/settings" role="menuitem">تنظیمات عمومی</a>
+          <hr class="menu-sep">
+          <button id="logout-btn" class="menu-item danger" type="button" role="menuitem">خروج</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout single">
+    <section class="panel user-admin-panel">
+      <p id="toast" class="toast" hidden></p>
+
+      <div id="user-head" class="user-hero"></div>
+
+      <nav class="seg-tabs" id="user-tabs" aria-label="بخش‌های مشتری">
+        <button type="button" class="seg-tab active" data-tab="account">حساب</button>
+        <button type="button" class="seg-tab" data-tab="plan">اشتراک</button>
+        <button type="button" class="seg-tab" data-tab="poll">پایش</button>
+        <button type="button" class="seg-tab" data-tab="routes">فیلترها</button>
+        <button type="button" class="seg-tab" data-tab="payments">پرداخت‌ها</button>
+        <button type="button" class="seg-tab" data-tab="watch">سابقه پایش</button>
+        <button type="button" class="seg-tab" data-tab="tickets">تیکت‌ها</button>
+        <button type="button" class="seg-tab" data-tab="more">بیشتر</button>
+      </nav>
+
+      <form id="profile-form" class="tab-panel settings-clean" data-panel="account">
+        <p class="panel-lead">نام و وضعیت حساب</p>
+        <label>نام نمایشی
+          <input name="display_name" type="text" placeholder="اختیاری">
+        </label>
+        <div class="toggle-row">
+          <label class="check">
+            <input name="active" type="checkbox">
+            حساب فعال
+          </label>
+          <label class="check">
+            <input name="ai_enabled" type="checkbox">
+            رتبه‌بندی هوشمند
+          </label>
+        </div>
+        <button class="primary small" type="submit">ذخیره</button>
+      </form>
+
+      <form id="plan-form" class="tab-panel settings-clean" data-panel="plan" hidden>
+        <p class="panel-lead">پلن، سقف فیلتر و تاریخ انقضا</p>
+        <p id="plan-status" class="status-line"></p>
+        <div class="field-grid">
+          <label>پلن
+            <select name="plan_id" id="plan-id"></select>
+          </label>
+          <label>سقف فیلتر
+            <input name="max_filters" type="number" min="0" max="100" placeholder="از پلن">
+          </label>
+          <label class="span-2">انقضا (شمسی)
+            <div class="jalali-field">
+              <input name="expires_at" type="text" placeholder="انتخاب از تقویم" autocomplete="off">
+              <button type="button" class="ghost small jalali-trigger" aria-label="باز کردن تقویم">تقویم</button>
+            </div>
+          </label>
+        </div>
+        <div class="toggle-row quiet">
+          <label class="check">
+            <input name="renew" type="checkbox" checked>
+            تمدید خودکار از امروز/انقضا
+          </label>
+          <label class="check">
+            <input name="apply_limits" type="checkbox" checked>
+            هم‌تراز کردن با پلن
+          </label>
+        </div>
+        <button class="primary small" type="submit">ذخیره اشتراک</button>
+      </form>
+
+      <form id="poll-form" class="tab-panel settings-clean" data-panel="poll" hidden>
+        <p class="panel-lead">زمان‌بندی پایش این مشتری</p>
+        <div class="field-grid">
+          <label>فاصله (دقیقه)
+            <input name="poll_interval_minutes" type="number" min="1" step="1">
+          </label>
+          <label>آفست (دقیقه)
+            <input name="poll_offset_minutes" type="number" min="0" step="1">
+          </label>
+          <label>آگهی برتر
+            <input name="best_count" type="number" min="1" max="10" step="1">
+          </label>
+        </div>
+        <p id="slot-hint" class="slot-hint"></p>
+        <button class="primary small" type="submit">ذخیره پایش</button>
+      </form>
+
+      <div id="routes-panel" class="tab-panel settings-clean" data-panel="routes" hidden>
+        <div class="panel-head tight">
+          <div>
+            <p class="panel-lead" style="margin:0">فیلترهای مشتری</p>
+            <p class="meta" style="margin:4px 0 0">معیارهای جستجو و مقصد تلگرام هر فیلتر. برای چت گروهی، ربات را ادمین کنید و یک پیام بفرستید.</p>
+          </div>
+          <button id="refresh-chats-btn" class="ghost small" type="button">تازه‌سازی</button>
+        </div>
+        <div id="route-list" class="route-list"></div>
+      </div>
+
+      <div id="payments-panel" class="tab-panel settings-clean" data-panel="payments" hidden>
+        <div class="panel-head tight">
+          <div>
+            <p class="panel-lead" style="margin:0">سابقه پرداخت</p>
+            <p class="meta" style="margin:4px 0 0">فاکتورها و وضعیت تأیید این مشتری.</p>
+          </div>
+          <button id="refresh-payments-btn" class="ghost small" type="button">تازه‌سازی</button>
+        </div>
+        <div id="payment-list" class="invoice-list"></div>
+      </div>
+
+      <div id="watch-panel" class="tab-panel settings-clean" data-panel="watch" hidden>
+        <div class="panel-head tight">
+          <div>
+            <p class="panel-lead" style="margin:0">سابقه پایش</p>
+            <p class="meta" style="margin:4px 0 0">جستجو و ارسال (تلگرام و بعداً ایمیل/پیامک). تا ۲۰۰ رویداد اخیر نگه داشته می‌شود.</p>
+          </div>
+          <button id="refresh-watch-btn" class="ghost small" type="button">تازه‌سازی</button>
+        </div>
+        <div id="watch-list" class="watch-log-list"></div>
+      </div>
+
+      <div id="tickets-panel" class="tab-panel settings-clean" data-panel="tickets" hidden>
+        <div class="panel-head tight">
+          <div>
+            <p class="panel-lead" style="margin:0">تیکت و گفتگو</p>
+            <p class="meta" style="margin:4px 0 0">پیام‌های پشتیبانی این مشتری را ببینید و پاسخ دهید.</p>
+          </div>
+          <button id="refresh-tickets-btn" class="ghost small" type="button">تازه‌سازی</button>
+        </div>
+        <div class="ticket-admin-layout">
+          <div id="admin-ticket-list" class="ticket-list"></div>
+          <div class="ticket-admin-thread">
+            <div id="admin-ticket-thread" class="ticket-thread"></div>
+            <form id="admin-ticket-form" class="ticket-reply-box">
+              <input type="hidden" id="admin-ticket-id" value="">
+              <label id="admin-ticket-subject-wrap">موضوع (برای پیام جدید)
+                <input id="admin-ticket-subject" placeholder="مثلاً پیگیری پرداخت">
+              </label>
+              <label>پیام
+                <textarea id="admin-ticket-body" rows="4" required placeholder="پاسخ یا پیام جدید…"></textarea>
+              </label>
+              <div class="create-actions">
+                <button id="admin-ticket-close-btn" class="ghost small" type="button" hidden>بستن تیکت</button>
+                <button class="primary small" type="submit">ارسال</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div id="more-panel" class="tab-panel settings-clean" data-panel="more" hidden>
+        <p class="panel-lead">ابزارها و حذف</p>
+        <div class="tool-block">
+          <div class="row">
+            <button id="rotate-btn" class="ghost small" type="button">کلید API جدید</button>
+            <a id="feed-link" class="ghost small" href="#" target="_blank">فید عمومی</a>
+          </div>
+          <p id="api-key" class="meta mono"></p>
+        </div>
+        <div class="danger-zone compact">
+          <p class="meta">حذف کامل حساب، فیلترها و داده‌های این مشتری.</p>
+          <button id="delete-btn" class="danger small" type="button">حذف حساب</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/dates.js?v=2"></script>
+  <script src="/admin-common.js?v=2"></script>
+  <script src="/admin-user.js?v=14"></script>
+</body>
+</html>

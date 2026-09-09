@@ -93,19 +93,35 @@ def _ensure_filter_ids(config: dict[str, Any]) -> bool:
     return changed
 
 
+def merged_fields(spec: dict[str, Any]) -> dict[str, Any]:
+    from divar import merged_search_fields
+
+    return merged_search_fields(spec)
+
+
 def filter_to_api(spec: dict[str, Any]) -> dict[str, Any]:
+    from categories import find_category
+
+    category = str(spec.get("category") or "light").strip() or "light"
+    info = find_category(category) or {}
+    fields = merged_fields(spec)
+    price = fields.get("price") if isinstance(fields.get("price"), dict) else {}
     return {
         "id": spec.get("id"),
         "name": spec.get("name") or "",
         "enabled": spec.get("enabled", True),
-        "category": spec.get("category") or "light",
+        "category": category,
+        "category_name": info.get("name") or category,
+        "category_path": info.get("path") or category,
         "query": spec.get("query") or "",
         "cities": list(spec.get("cities") or []),
-        "price_min_million": _to_million(spec.get("price_min_toman")),
-        "price_max_million": _to_million(spec.get("price_max_toman")),
+        "price_min_million": _to_million(price.get("min") or spec.get("price_min_toman")),
+        "price_max_million": _to_million(price.get("max") or spec.get("price_max_toman")),
         "exclude_title": list(spec.get("exclude_title") or []),
         "max_pages": int(spec.get("max_pages") or 3),
         "chat_id": str(spec.get("chat_id") or "").strip(),
+        "destinations": list(spec.get("destinations") or []),
+        "fields": fields,
     }
 
 
@@ -114,27 +130,47 @@ def filter_from_api(body: dict[str, Any], existing: dict[str, Any] | None = None
     spec["id"] = str(body.get("id") or spec.get("id") or uuid.uuid4().hex[:10])
     name = str(body.get("name") or "").strip()
     query = str(body.get("query") or "").strip()
+    category = str(body.get("category") or spec.get("category") or "").strip()
     if not name:
         raise AppError("Enter a filter name.")
-    if not query:
-        raise AppError("Enter a search query, e.g. Pride.")
+    if not category:
+        raise AppError("Select a Divar category.")
     cities = _clean_list(body.get("cities"))
     if not cities:
         raise AppError("Select at least one city.")
+    fields = body.get("fields")
+    if not isinstance(fields, dict):
+        fields = dict(spec.get("fields") or {})
+    price_min = _from_million(body.get("price_min_million"))
+    price_max = _from_million(body.get("price_max_million"))
+    if "price" not in fields and (price_min is not None or price_max is not None):
+        fields["price"] = {k: v for k, v in (("min", price_min), ("max", price_max)) if v is not None}
+    chassis = str(body.get("chassis_status") or "").strip()
+    if chassis and "chassis_status" not in fields:
+        fields["chassis_status"] = chassis
+    price = fields.get("price") if isinstance(fields.get("price"), dict) else {}
     spec.update(
         {
             "name": name,
             "enabled": bool(body.get("enabled", True)),
-            "category": str(body.get("category") or "light").strip() or "light",
+            "category": category,
             "query": query,
             "cities": cities,
-            "price_min_toman": _from_million(body.get("price_min_million")),
-            "price_max_toman": _from_million(body.get("price_max_million")),
+            "price_min_toman": price.get("min", price.get("minimum", price_min)),
+            "price_max_toman": price.get("max", price.get("maximum", price_max)),
             "exclude_title": _clean_list(body.get("exclude_title")),
             "max_pages": max(1, min(int(body.get("max_pages") or 3), 8)),
             "chat_id": str(body.get("chat_id") if "chat_id" in body else spec.get("chat_id") or "").strip(),
+            "fields": fields,
         }
     )
+    if "destinations" in body and isinstance(body.get("destinations"), list):
+        spec["destinations"] = body["destinations"]
+    elif "destinations" not in spec and spec.get("chat_id"):
+        spec["destinations"] = [
+            {"channel": "telegram", "chat_id": spec["chat_id"], "enabled": True}
+        ]
+    spec.pop("chassis_status", None)
     return spec
 
 
@@ -264,17 +300,45 @@ def poll_interval_seconds(config: dict[str, Any] | None = None) -> int:
     return 180
 
 
+def poll_interval_minutes(config: dict[str, Any] | None = None) -> int:
+    return max(1, poll_interval_seconds(config) // 60)
+
+
+def user_poll_interval_minutes(user: dict[str, Any] | None = None, config: dict[str, Any] | None = None) -> int:
+    config = config or load_config()
+    if user and user.get("poll_interval_minutes") is not None:
+        return max(1, int(user["poll_interval_minutes"]))
+    return poll_interval_minutes(config)
+
+
+def user_poll_offset_minutes(user: dict[str, Any] | None = None, config: dict[str, Any] | None = None) -> int:
+    interval = user_poll_interval_minutes(user, config)
+    raw = int((user or {}).get("poll_offset_minutes") or 0)
+    return max(0, raw) % interval
+
+
+def user_best_count(user: dict[str, Any] | None = None, config: dict[str, Any] | None = None) -> int:
+    config = config or load_config()
+    if user and user.get("best_count") is not None:
+        return max(1, min(int(user["best_count"]), 10))
+    if config.get("best_count") is not None:
+        return max(1, min(int(config["best_count"]), 10))
+    return max(1, min(int(config.get("max_send_per_run") or 5), 10))
+
+
 def seconds_until_next_slot(
     interval_seconds: int | None = None,
     *,
+    offset_seconds: int = 0,
     now: datetime | None = None,
     include_now: bool = False,
 ) -> float:
     interval = max(1, int(interval_seconds if interval_seconds is not None else poll_interval_seconds()))
+    offset = int(offset_seconds) % interval
     current = now.astimezone(APP_TZ) if now else datetime.now(APP_TZ)
     midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
     elapsed = (current - midnight).total_seconds()
-    remainder = elapsed % interval
+    remainder = (elapsed - offset) % interval
     if include_now and remainder < 1:
         return 0.0
     if remainder < 1e-6:
@@ -285,11 +349,17 @@ def seconds_until_next_slot(
 def next_slot_at(
     interval_seconds: int | None = None,
     *,
+    offset_seconds: int = 0,
     now: datetime | None = None,
     include_now: bool = False,
 ) -> datetime:
     current = now.astimezone(APP_TZ) if now else datetime.now(APP_TZ)
-    wait = seconds_until_next_slot(interval_seconds, now=current, include_now=include_now)
+    wait = seconds_until_next_slot(
+        interval_seconds,
+        offset_seconds=offset_seconds,
+        now=current,
+        include_now=include_now,
+    )
     return current + timedelta(seconds=wait)
 
 
@@ -298,14 +368,101 @@ def format_slot_time(when: datetime | None = None) -> str:
     return when.astimezone(APP_TZ).strftime("%H:%M")
 
 
+def slot_preview_minutes(interval_minutes: int, offset_minutes: int = 0, count: int = 4) -> list[int]:
+    interval = max(1, int(interval_minutes))
+    offset = max(0, int(offset_minutes)) % interval
+    return [(offset + i * interval) % 60 for i in range(max(1, count))]
+
+
+def next_due_watch_users(
+    users: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+    include_now: bool = False,
+    config: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], float, datetime | None]:
+    """Return users due at the soonest slot, wait seconds, and that slot time."""
+    config = config or load_config()
+    current = now.astimezone(APP_TZ) if now else datetime.now(APP_TZ)
+    if not users:
+        wait = seconds_until_next_slot(poll_interval_seconds(config), now=current, include_now=include_now)
+        return [], wait, current + timedelta(seconds=wait)
+
+    soonest: float | None = None
+    due: list[dict[str, Any]] = []
+    for user in users:
+        interval_m = user_poll_interval_minutes(user, config)
+        offset_m = user_poll_offset_minutes(user, config)
+        wait = seconds_until_next_slot(
+            interval_m * 60,
+            offset_seconds=offset_m * 60,
+            now=current,
+            include_now=include_now,
+        )
+        if soonest is None or wait < soonest - 0.5:
+            soonest = wait
+            due = [user]
+        elif abs(wait - soonest) <= 0.5:
+            due.append(user)
+    wait_s = float(soonest if soonest is not None else 60)
+    return due, wait_s, current + timedelta(seconds=wait_s)
+
+def admin_token() -> str:
+    load_dotenv()
+    return os.getenv("ADMIN_TOKEN", "").strip()
+
+
+def admin_username() -> str:
+    load_dotenv()
+    return os.getenv("ADMIN_USERNAME", "").strip()
+
+
+def admin_password() -> str:
+    load_dotenv()
+    return os.getenv("ADMIN_PASSWORD", "").strip()
+
+
+def admin_credentials_ok(username: str, password: str) -> bool:
+    expected_user = admin_username()
+    expected_pass = admin_password()
+    if not expected_user or not expected_pass:
+        return False
+    return username.strip() == expected_user and password == expected_pass
+
+
+def public_base_url() -> str:
+    load_dotenv()
+    return (os.getenv("PUBLIC_BASE_URL") or "http://127.0.0.1:8765").rstrip("/")
+
+
+def payment_info() -> dict[str, Any]:
+    load_dotenv()
+    card = (os.getenv("PAYMENT_CARD_NUMBER") or "").strip()
+    holder = (os.getenv("PAYMENT_CARD_HOLDER") or "").strip()
+    bank = (os.getenv("PAYMENT_BANK_NAME") or "").strip()
+    sheba = (os.getenv("PAYMENT_SHEBA") or "").strip().replace(" ", "").upper()
+    support = (os.getenv("SUPPORT_TELEGRAM") or "").strip().lstrip("@")
+    note = (os.getenv("PAYMENT_NOTE") or "").strip()
+    return {
+        "card_number": card,
+        "card_holder": holder,
+        "bank_name": bank,
+        "sheba": sheba,
+        "support_telegram": support,
+        "support_url": f"https://t.me/{support}" if support else "",
+        "note": note
+        or "مبلغ را کارت‌به‌کارت کنید و شناسه فاکتور را در توضیحات واریز بنویسید.",
+        "configured": bool(card and holder),
+    }
+
+
 def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     config = config or load_config()
     load_dotenv()
-    filters = config.get("filters") or []
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     from notifier import telegram_bot_username
     seconds = poll_interval_seconds(config)
+    pay = payment_info()
     return {
         "poll_interval_minutes": max(1, seconds // 60),
         "best_count": max(1, min(int(config.get("best_count") or config.get("max_send_per_run") or 5), 10)),
@@ -313,14 +470,17 @@ def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "send_on_first_run": bool(config.get("send_on_first_run", True)),
         "send_photos": bool((config.get("telegram") or {}).get("send_photos", True)),
         "telegram_token": bool(token),
-        "telegram_chat": bool(chat_id) or any(str(f.get("chat_id") or "").strip() for f in filters),
-        "telegram_ready": bool(token and (chat_id or any(str(f.get("chat_id") or "").strip() for f in filters))),
-        "default_chat_id": chat_id,
+        "telegram_ready": bool(token),
+        "bale_token": bool((os.getenv("BALE_BOT_TOKEN") or "").strip()),
+        "bale_ready": bool((os.getenv("BALE_BOT_TOKEN") or "").strip()),
         "bot_username": telegram_bot_username(token) if token else None,
         "llm_ready": bool((os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()),
         "llm_model": (os.getenv("LLM_MODEL") or "gpt-4o-mini").strip(),
-        "filter_count": len(filters),
-        "enabled_count": sum(1 for f in filters if f.get("enabled", True)),
+        "public_base_url": public_base_url(),
+        "admin_configured": bool(admin_username() and admin_password()) or bool(admin_token()),
+        "payment": pay,
+        "support_telegram": pay.get("support_telegram") or "",
+        "support_url": pay.get("support_url") or "",
     }
 
 
