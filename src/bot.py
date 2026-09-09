@@ -259,7 +259,12 @@ class MessengerBot:
             return
         notifier.send_text("در حال بررسی آگهی‌های فعال…", chat_id=chat_id)
         try:
-            result = send_best_for_user(user, count)
+            result = send_best_for_user(
+                user,
+                count,
+                reply_channel=self.channel,
+                reply_chat_id=chat_id,
+            )
             self.last_message = result["message"]
         except Exception as exc:
             self.last_message = str(exc)
