@@ -405,6 +405,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(
                         {"filters": [filter_to_api(spec) for spec in db.list_filters(user_id)]}
                     )
+                if len(parts) == 5 and parts[4] == "invoices":
+                    return self._json({"invoices": db.list_user_invoices(user_id, limit=50)})
                 raise AppError("Not found.")
             if path == "/api/me":
                 user = self._require_user()

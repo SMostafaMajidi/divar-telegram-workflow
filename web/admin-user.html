@@ -43,6 +43,7 @@
         <button type="button" class="seg-tab" data-tab="plan">اشتراک</button>
         <button type="button" class="seg-tab" data-tab="poll">پایش</button>
         <button type="button" class="seg-tab" data-tab="routes">فیلترها</button>
+        <button type="button" class="seg-tab" data-tab="payments">پرداخت‌ها</button>
         <button type="button" class="seg-tab" data-tab="more">بیشتر</button>
       </nav>
 
@@ -122,6 +123,17 @@
         <div id="route-list" class="route-list"></div>
       </div>
 
+      <div id="payments-panel" class="tab-panel settings-clean" data-panel="payments" hidden>
+        <div class="panel-head tight">
+          <div>
+            <p class="panel-lead" style="margin:0">سابقه پرداخت</p>
+            <p class="meta" style="margin:4px 0 0">فاکتورها و وضعیت تأیید این مشتری.</p>
+          </div>
+          <button id="refresh-payments-btn" class="ghost small" type="button">تازه‌سازی</button>
+        </div>
+        <div id="payment-list" class="invoice-list"></div>
+      </div>
+
       <div id="more-panel" class="tab-panel settings-clean" data-panel="more" hidden>
         <p class="panel-lead">ابزارها و حذف</p>
         <div class="tool-block">
@@ -141,6 +153,6 @@
 
   <script src="/dates.js?v=2"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin-user.js?v=10"></script>
+  <script src="/admin-user.js?v=11"></script>
 </body>
 </html>

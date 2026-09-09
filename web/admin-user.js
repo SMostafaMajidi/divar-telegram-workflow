@@ -1,5 +1,13 @@
-const state = { user: null, filters: [], chats: [], plans: [] };
+const state = { user: null, filters: [], chats: [], plans: [], invoices: [] };
 const userId = location.pathname.split("/").filter(Boolean).pop();
+
+const INVOICE_STATUS = {
+  pending: "در انتظار پرداخت",
+  awaiting_review: "در صف تأیید",
+  paid: "پرداخت‌شده",
+  rejected: "رد شده",
+  cancelled: "لغو شده",
+};
 
 const els = {
   title: $("#page-title"),
@@ -13,6 +21,8 @@ const els = {
   routesPanel: $("#routes-panel"),
   routeList: $("#route-list"),
   refreshChats: $("#refresh-chats-btn"),
+  paymentList: $("#payment-list"),
+  refreshPayments: $("#refresh-payments-btn"),
   slotHint: $("#slot-hint"),
   rotate: $("#rotate-btn"),
   feed: $("#feed-link"),
@@ -219,6 +229,77 @@ function renderRoutes() {
   }
 }
 
+function renderPayments() {
+  if (!els.paymentList) return;
+  els.paymentList.replaceChildren();
+  if (!state.invoices.length) {
+    els.paymentList.append(
+      Object.assign(document.createElement("p"), {
+        className: "empty",
+        textContent: "سابقه پرداختی برای این مشتری نیست.",
+      }),
+    );
+    return;
+  }
+  for (const inv of state.invoices) {
+    const card = document.createElement("article");
+    card.className = "invoice-card";
+    const canAct = inv.status === "pending" || inv.status === "awaiting_review";
+    const receipt = inv.has_receipt
+      ? `<p class="meta"><a class="ghost small" href="/api/invoices/${inv.id}/receipt" target="_blank" rel="noreferrer">مشاهده فیش</a>${inv.receipt_name ? ` · ${inv.receipt_name}` : ""}</p>`
+      : `<p class="meta">فیش آپلود نشده</p>`;
+    const actions = canAct
+      ? `<div class="row">
+          <button class="primary small" type="button" data-confirm="${inv.id}" ${inv.has_receipt ? "" : "disabled"}>تأیید و فعال‌سازی</button>
+          <button class="ghost small" type="button" data-reject="${inv.id}">رد</button>
+        </div>`
+      : "";
+    card.innerHTML = `
+      <div class="card-top">
+        <div>
+          <h3>${inv.plan_name || inv.plan_id}</h3>
+          <p class="meta">${inv.amount_label} · شناسه <b dir="ltr">${inv.ref_code}</b></p>
+          <p class="meta">توضیح: ${inv.payer_note || "—"}</p>
+          <p class="meta">${typeof formatJalali === "function" ? formatJalali(inv.created_at, { withTime: true }) : inv.created_at || ""}</p>
+        </div>
+        <span class="pill ${inv.status === "paid" ? "ok" : inv.status === "rejected" ? "warn" : inv.status === "awaiting_review" ? "warn" : ""}">${INVOICE_STATUS[inv.status] || inv.status}</span>
+      </div>
+      ${receipt}
+      ${actions}
+    `;
+    els.paymentList.append(card);
+  }
+  els.paymentList.querySelectorAll("[data-confirm]").forEach((btn) => {
+    btn.onclick = async () => {
+      if (!confirm("پرداخت تأیید شود و حساب با انقضای پلن فعال گردد؟")) return;
+      try {
+        const data = await api(`/api/admin/invoices/${btn.dataset.confirm}/confirm`, {
+          method: "POST",
+          body: {},
+        });
+        if (data.user) state.user = data.user;
+        toast("پرداخت تأیید شد", "ok");
+        await loadPayments();
+        render();
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    };
+  });
+  els.paymentList.querySelectorAll("[data-reject]").forEach((btn) => {
+    btn.onclick = async () => {
+      if (!confirm("فاکتور رد شود؟")) return;
+      try {
+        await api(`/api/admin/invoices/${btn.dataset.reject}/reject`, { method: "POST", body: {} });
+        toast("رد شد", "ok");
+        await loadPayments();
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    };
+  });
+}
+
 function render() {
   const user = state.user;
   if (!user) return;
@@ -274,6 +355,7 @@ function render() {
   els.feed.href = `/u/${user.public_slug || user.login_username || user.telegram_username}`;
   els.apiKey.textContent = user.api_key ? `API key: ${user.api_key}` : "کلید API هنوز ساخته نشده.";
   renderRoutes();
+  renderPayments();
 }
 
 async function loadRoutes() {
@@ -284,6 +366,12 @@ async function loadRoutes() {
   state.filters = filters.filters || [];
   state.chats = chats.chats || [];
   renderRoutes();
+}
+
+async function loadPayments() {
+  const data = await api(`/api/admin/users/${userId}/invoices`);
+  state.invoices = data.invoices || [];
+  renderPayments();
 }
 
 els.tabs?.addEventListener("click", (e) => {
@@ -386,6 +474,15 @@ els.refreshChats.onclick = async () => {
   }
 };
 
+els.refreshPayments?.addEventListener("click", async () => {
+  try {
+    await loadPayments();
+    toast(state.invoices.length ? `${state.invoices.length} فاکتور` : "فاکتوری نیست", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
 els.rotate.onclick = async () => {
   if (!confirm("کلید API جدید ساخته شود؟ کلید قبلی از کار می‌افتد.")) return;
   try {
@@ -417,7 +514,7 @@ async function boot() {
   bindLogout();
   bindJalaliPickers();
   const initial = (location.hash || "").replace("#", "") || "account";
-  setTab(["account", "plan", "poll", "routes", "more"].includes(initial) ? initial : "account");
+  setTab(["account", "plan", "poll", "routes", "payments", "more"].includes(initial) ? initial : "account");
   if (!userId) {
     toast("شناسه مشتری نامعتبر است", "err");
     return;
@@ -429,7 +526,7 @@ async function boot() {
     ]);
     state.user = data.user;
     state.plans = plans.plans || [];
-    await loadRoutes();
+    await Promise.all([loadRoutes(), loadPayments()]);
     render();
   } catch (err) {
     toast(err.message, "err");

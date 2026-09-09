@@ -19,10 +19,7 @@ function render(invoices) {
     const card = document.createElement("article");
     card.className = "invoice-card";
     const receipt = inv.has_receipt
-      ? `<div class="receipt-preview">
-           <a class="ghost small" href="/api/invoices/${inv.id}/receipt" target="_blank" rel="noreferrer">باز کردن فیش</a>
-           <img src="/api/invoices/${inv.id}/receipt" alt="فیش" loading="lazy" onerror="this.style.display='none'">
-         </div>`
+      ? `<p class="meta"><a class="ghost small" href="/api/invoices/${inv.id}/receipt" target="_blank" rel="noreferrer">مشاهده فیش</a>${inv.receipt_name ? ` · ${inv.receipt_name}` : ""}</p>`
       : `<p class="meta">فیش آپلود نشده</p>`;
     const actions =
       inv.status === "pending" || inv.status === "awaiting_review"
