@@ -255,6 +255,18 @@ def init_db(path: Path | None = None) -> None:
             )
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS messenger_credentials (
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    channel TEXT NOT NULL,
+                    token TEXT NOT NULL,
+                    label TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, channel)
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS filter_destinations (
                     id TEXT PRIMARY KEY,
                     filter_id TEXT NOT NULL REFERENCES filters(id) ON DELETE CASCADE,
@@ -513,6 +525,7 @@ def _user_public(row: dict[str, Any]) -> dict[str, Any]:
     max_filters = row.get("max_filters")
     accounts = list_messenger_accounts(row["id"])
     linked = bool(accounts) or bool(row.get("telegram_chat_id"))
+    eitaa_configured = bool(get_messenger_token(row["id"], "eitaa"))
     user = {
         "id": row["id"],
         "telegram_username": tg,
@@ -534,6 +547,7 @@ def _user_public(row: dict[str, Any]) -> dict[str, Any]:
         "max_filters": int(max_filters) if max_filters is not None else None,
         "expires_at": row.get("expires_at") or "",
         "messenger_accounts": accounts,
+        "eitaa_configured": eitaa_configured,
     }
     user["effective_max_filters"] = effective_max_filters(user)
     user["subscription_status"] = subscription_status(user)
@@ -2343,6 +2357,132 @@ def list_watch_events(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
             conn.close()
 
 
+def mask_secret(token: str) -> str:
+    raw = str(token or "").strip()
+    if not raw:
+        return ""
+    if len(raw) <= 8:
+        return "••••" + raw[-2:]
+    return "••••" + raw[-4:]
+
+
+def get_messenger_token(user_id: str, channel: str) -> str:
+    ch = str(channel or "").strip().lower()
+    if not user_id or not ch:
+        return ""
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT token FROM messenger_credentials
+                WHERE user_id = ? AND channel = ?
+                """,
+                (user_id, ch),
+            ).fetchone()
+            return str(row["token"] or "").strip() if row else ""
+        finally:
+            conn.close()
+
+
+def get_messenger_credential(user_id: str, channel: str) -> dict[str, Any] | None:
+    ch = str(channel or "").strip().lower()
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT * FROM messenger_credentials
+                WHERE user_id = ? AND channel = ?
+                """,
+                (user_id, ch),
+            ).fetchone()
+            if not row:
+                return None
+            token = row["token"] or ""
+            return {
+                "channel": row["channel"],
+                "configured": bool(token),
+                "token_masked": mask_secret(token),
+                "label": row["label"] or "",
+                "updated_at": row["updated_at"],
+            }
+        finally:
+            conn.close()
+
+
+def set_messenger_token(
+    user_id: str,
+    channel: str,
+    token: str,
+    *,
+    label: str = "",
+) -> dict[str, Any]:
+    ch = str(channel or "").strip().lower()
+    value = str(token or "").strip()
+    if not user_id or not ch:
+        raise AppError("پارامتر نامعتبر است.")
+    if not value:
+        raise AppError("توکن خالی است.")
+    if not get_user(user_id):
+        raise AppError("User not found.")
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO messenger_credentials (user_id, channel, token, label, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, channel) DO UPDATE SET
+                    token = excluded.token,
+                    label = excluded.label,
+                    updated_at = excluded.updated_at
+                """,
+                (user_id, ch, value, str(label or "").strip()[:80], _now()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    out = get_messenger_credential(user_id, ch)
+    assert out
+    return out
+
+
+def clear_messenger_token(user_id: str, channel: str) -> None:
+    ch = str(channel or "").strip().lower()
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute(
+                "DELETE FROM messenger_credentials WHERE user_id = ? AND channel = ?",
+                (user_id, ch),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def delete_user_chat(user_id: str, channel: str, chat_id: str) -> None:
+    ch = str(channel or "").strip().lower() or "telegram"
+    cid = str(chat_id or "").strip()
+    if ch == "eitaa":
+        from messengers import normalize_eitaa_chat_id
+
+        cid = normalize_eitaa_chat_id(cid)
+    if not cid:
+        raise AppError("chat_id is required.")
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute(
+                "DELETE FROM user_chats WHERE user_id = ? AND channel = ? AND chat_id = ?",
+                (user_id, ch, cid),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
 def list_messenger_accounts(user_id: str) -> list[dict[str, Any]]:
     with _lock:
         conn = connect()
@@ -2511,6 +2651,10 @@ def set_filter_destinations(
     for item in destinations or []:
         ch = str(item.get("channel") or "telegram").strip().lower() or "telegram"
         cid = str(item.get("chat_id") or "").strip()
+        if ch == "eitaa":
+            from messengers import normalize_eitaa_chat_id
+
+            cid = normalize_eitaa_chat_id(cid)
         if not cid:
             continue
         key = (ch, cid)
@@ -2542,6 +2686,19 @@ def set_filter_destinations(
             conn.commit()
         finally:
             conn.close()
+    for ch, cid, enabled in cleaned:
+        if ch == "eitaa" and enabled:
+            try:
+                upsert_user_chat(
+                    user_id,
+                    channel="eitaa",
+                    chat_id=cid,
+                    chat_type="channel",
+                    name=cid,
+                    username=cid,
+                )
+            except Exception:
+                pass
     return list_filter_destinations(filter_id)
 
 
@@ -2556,6 +2713,10 @@ def resolve_filter_destinations(user: dict[str, Any], spec: dict[str, Any]) -> l
             continue
         ch = str(item.get("channel") or "telegram").strip().lower() or "telegram"
         cid = str(item.get("chat_id") or "").strip()
+        if ch == "eitaa":
+            from messengers import normalize_eitaa_chat_id
+
+            cid = normalize_eitaa_chat_id(cid)
         if cid:
             out.append({"channel": ch, "chat_id": cid})
     if out:

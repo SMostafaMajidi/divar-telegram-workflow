@@ -14,13 +14,14 @@ const DEFAULT_EXCLUDE = [
   "زنگ زدگی",
 ];
 
-const CHANNEL_LABELS = { telegram: "تلگرام", bale: "بله" };
+const CHANNEL_LABELS = { telegram: "تلگرام", bale: "بله", eitaa: "ایتا" };
 
 const state = {
   filters: [],
   chats: [],
   messengers: [],
   destinations: [],
+  eitaa: null,
   tickets: [],
   activeTicket: null,
   status: {},
@@ -67,9 +68,19 @@ const els = {
   apiDocsFoot: $("#api-docs-foot"),
   apiDocsSep: $("#api-docs-sep"),
   messengerList: $("#messenger-list"),
+  eitaaInstructions: $("#eitaa-instructions"),
+  eitaaToken: $("#eitaa-token"),
+  eitaaTokenSave: $("#eitaa-token-save"),
+  eitaaTokenClear: $("#eitaa-token-clear"),
+  eitaaTokenStatus: $("#eitaa-token-status"),
+  eitaaChannelId: $("#eitaa-channel-id"),
+  eitaaChannelAdd: $("#eitaa-channel-add"),
+  eitaaChannelList: $("#eitaa-channel-list"),
   destList: $("#dest-list"),
   destChannel: $("#dest-channel"),
   destChat: $("#dest-chat"),
+  destEitaaId: $("#dest-eitaa-id"),
+  destHint: $("#dest-hint"),
   destAddBtn: $("#dest-add-btn"),
   ticketList: $("#ticket-list"),
   ticketAddBtn: $("#ticket-add-btn"),
@@ -180,9 +191,55 @@ function fillChannelSelect(select, selected) {
   else if (channels.length) select.value = channels[0];
 }
 
+function syncDestInputs() {
+  const channel = els.destChannel?.value || "telegram";
+  const isEitaa = channel === "eitaa";
+  const eitaaChats = state.chats.filter((c) => (c.channel || "") === "eitaa");
+  if (els.destChat) {
+    els.destChat.hidden = isEitaa && !eitaaChats.length;
+  }
+  if (els.destEitaaId) {
+    els.destEitaaId.hidden = !(isEitaa && !eitaaChats.length);
+  }
+  if (els.destHint) {
+    if (!isEitaa) {
+      els.destHint.textContent =
+        "اول پیام‌رسان، بعد چت. می‌توانید چند مقصد از چند پیام‌رسان اضافه کنید.";
+    } else if (!state.user?.eitaa_configured && !(state.eitaa && state.eitaa.configured)) {
+      els.destHint.textContent = "اول در بخش ایتا توکن را ذخیره کنید، بعد کانال اضافه کنید.";
+    } else if (!eitaaChats.length) {
+      els.destHint.textContent = "شناسه کانال را وارد کنید یا از بخش ایتا کانال اضافه کنید.";
+    } else {
+      els.destHint.textContent = "یکی از کانال‌های ایتای ذخیره‌شده را انتخاب کنید.";
+    }
+  }
+}
+
 function fillDestChatSelect(select, channel, selected) {
   if (!select) return;
   const ch = channel || "telegram";
+  if (ch === "eitaa") {
+    const matched = state.chats.filter((c) => (c.channel || "") === "eitaa");
+    select.replaceChildren(
+      el("option", {
+        value: "",
+        text: matched.length ? "انتخاب کانال ایتا" : "اول کانال ایتا را در بخش بالا اضافه کنید",
+      }),
+    );
+    for (const chat of matched) {
+      select.append(el("option", { value: chat.id, text: chatLabel(chat) }));
+    }
+    if (selected) {
+      if (![...select.options].some((o) => o.value === String(selected))) {
+        select.append(el("option", { value: selected, text: selected }));
+      }
+      select.value = String(selected);
+    } else if (matched.length === 1) {
+      select.value = String(matched[0].id);
+    }
+    syncDestInputs();
+    return;
+  }
   const matched = state.chats.filter((c) => (c.channel || "telegram") === ch);
   select.replaceChildren(
     el("option", {
@@ -201,17 +258,20 @@ function fillDestChatSelect(select, channel, selected) {
   } else if (matched.length === 1) {
     select.value = String(matched[0].id);
   }
+  syncDestInputs();
 }
 
 async function refreshMessengerState() {
-  const [chats, messengers, me] = await Promise.all([
+  const [chats, messengers, me, eitaa] = await Promise.all([
     api("/api/chats"),
     api("/api/messengers"),
     api("/api/me"),
+    api("/api/eitaa").catch(() => null),
   ]);
   state.chats = chats.chats || [];
   state.messengers = messengers.messengers || me.messengers || [];
   if (me.user) state.user = me.user;
+  if (eitaa) renderEitaaSetup(eitaa);
   renderMessengers();
 }
 
@@ -254,21 +314,73 @@ function renderMessengers() {
     return;
   }
   for (const m of state.messengers) {
+    if (m.channel === "eitaa") continue; // dedicated setup section below
+    const meta = m.linked
+      ? "متصل است · برای چت‌های بیشتر باز کنید"
+      : "برای اتصال استارت/لاگین کنید";
+    const attrs = { class: `messenger-card ${m.linked ? "linked" : ""}` };
+    if (m.deep_link) {
+      attrs.href = m.deep_link;
+      attrs.target = "_blank";
+      attrs.rel = "noreferrer";
+    }
     els.messengerList.append(
-      el("a", {
-        class: `messenger-card ${m.linked ? "linked" : ""}`,
-        href: m.deep_link || "#",
-        target: "_blank",
-        rel: "noreferrer",
-      }, [
+      el(m.deep_link ? "a" : "div", attrs, [
         el("strong", { text: m.label }),
-        el("span", {
-          class: "meta",
-          text: m.linked ? "متصل است · برای چت‌های بیشتر باز کنید" : "برای اتصال استارت/لاگین کنید",
-        }),
+        el("span", { class: "meta", text: meta }),
       ]),
     );
   }
+}
+
+function renderEitaaSetup(data) {
+  state.eitaa = data || state.eitaa || {};
+  const eitaa = state.eitaa;
+  if (els.eitaaInstructions) {
+    els.eitaaInstructions.replaceChildren();
+    for (const step of eitaa.instructions || []) {
+      els.eitaaInstructions.append(el("li", { text: step }));
+    }
+  }
+  if (els.eitaaTokenStatus) {
+    els.eitaaTokenStatus.textContent = eitaa.configured
+      ? `توکن ذخیره شده: ${eitaa.token_masked || "••••"}`
+      : "هنوز توکنی ذخیره نشده.";
+  }
+  if (els.eitaaTokenClear) els.eitaaTokenClear.hidden = !eitaa.configured;
+  if (els.eitaaChannelList) {
+    els.eitaaChannelList.replaceChildren();
+    const channels = eitaa.channels || [];
+    if (!channels.length) {
+      els.eitaaChannelList.append(el("p", { class: "meta", text: "کانالی اضافه نشده." }));
+    } else {
+      for (const chat of channels) {
+        els.eitaaChannelList.append(
+          el("div", { class: "dest-chip" }, [
+            el("span", { text: chatLabel(chat) }),
+            el("button", {
+              type: "button",
+              class: "ghost small",
+              text: "حذف",
+              onClick: async () => {
+                try {
+                  const data = await api(`/api/eitaa/channels/${encodeURIComponent(chat.id)}`, {
+                    method: "DELETE",
+                  });
+                  renderEitaaSetup(data);
+                  await refreshMessengerState();
+                  toast("کانال حذف شد", "ok");
+                } catch (err) {
+                  toast(err.message, "err");
+                }
+              },
+            }),
+          ]),
+        );
+      }
+    }
+  }
+  if (state.user) state.user.eitaa_configured = !!eitaa.configured;
 }
 
 function fillChatSelect(select, selected) {
@@ -992,21 +1104,96 @@ els.form.addEventListener("submit", async (event) => {
 
 els.destChannel?.addEventListener("change", () => {
   fillDestChatSelect(els.destChat, els.destChannel.value);
+  syncDestInputs();
 });
 
 els.destAddBtn?.addEventListener("click", () => {
   const channel = els.destChannel?.value || "telegram";
-  const chatId = els.destChat?.value;
-  if (!chatId) {
-    toast("چت را انتخاب کنید", "err");
-    return;
+  let chatId = "";
+  if (channel === "eitaa") {
+    const eitaaChats = state.chats.filter((c) => (c.channel || "") === "eitaa");
+    if (eitaaChats.length && els.destChat && !els.destChat.hidden) {
+      chatId = els.destChat.value;
+    } else {
+      chatId = String(els.destEitaaId?.value || "")
+        .trim()
+        .replace(/^@+/, "")
+        .replace(/^https?:\/\/(www\.)?eitaa\.com\//i, "")
+        .replace(/\/$/, "");
+    }
+    if (!chatId) {
+      toast("کانال ایتا را انتخاب یا وارد کنید", "err");
+      return;
+    }
+  } else {
+    chatId = els.destChat?.value;
+    if (!chatId) {
+      toast("چت را انتخاب کنید", "err");
+      return;
+    }
   }
   if (state.destinations.some((d) => destKey(d) === destKey({ channel, chat_id: chatId }))) {
     toast("این مقصد قبلاً اضافه شده", "err");
     return;
   }
   state.destinations.push({ channel, chat_id: chatId, enabled: true });
+  if (channel === "eitaa" && els.destEitaaId) els.destEitaaId.value = "";
   renderDestList();
+});
+
+els.eitaaTokenSave?.addEventListener("click", async () => {
+  const token = String(els.eitaaToken?.value || "").trim();
+  if (!token) {
+    toast("توکن را وارد کنید", "err");
+    return;
+  }
+  els.eitaaTokenSave.disabled = true;
+  try {
+    const data = await api("/api/eitaa", { method: "POST", body: { token } });
+    if (els.eitaaToken) els.eitaaToken.value = "";
+    renderEitaaSetup(data.eitaa || data);
+    await refreshMessengerState();
+    toast("توکن ایتا ذخیره شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    els.eitaaTokenSave.disabled = false;
+  }
+});
+
+els.eitaaTokenClear?.addEventListener("click", async () => {
+  if (!confirm("توکن ایتایار حذف شود؟")) return;
+  try {
+    const data = await api("/api/eitaa", { method: "DELETE" });
+    renderEitaaSetup(data);
+    await refreshMessengerState();
+    toast("توکن حذف شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+els.eitaaChannelAdd?.addEventListener("click", async () => {
+  const chatId = String(els.eitaaChannelId?.value || "").trim();
+  if (!chatId) {
+    toast("شناسه کانال را وارد کنید", "err");
+    return;
+  }
+  els.eitaaChannelAdd.disabled = true;
+  try {
+    const data = await api("/api/eitaa/channels", {
+      method: "POST",
+      body: { chat_id: chatId },
+    });
+    if (els.eitaaChannelId) els.eitaaChannelId.value = "";
+    renderEitaaSetup(data.eitaa || data);
+    await refreshMessengerState();
+    toast("کانال اضافه شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    els.eitaaChannelAdd.disabled = false;
+  }
 });
 
 $("#preview-form-btn").addEventListener("click", async () => {
@@ -1213,12 +1400,13 @@ els.ticketForm?.addEventListener("submit", async (event) => {
 
 async function boot() {
   try {
-    const [me, filters, categories, chats, messengers] = await Promise.all([
+    const [me, filters, categories, chats, messengers, eitaa] = await Promise.all([
       api("/api/me"),
       api("/api/filters"),
       api("/api/categories"),
       api("/api/chats"),
       api("/api/messengers"),
+      api("/api/eitaa"),
     ]);
     state.user = me.user;
     state.filters = filters.filters || [];
@@ -1228,6 +1416,7 @@ async function boot() {
     state.categoryFlat = categories.flat || [];
     renderStatus();
     renderMessengers();
+    renderEitaaSetup(eitaa);
     renderFilters();
     await Promise.all([loadFeed(), loadTickets()]);
   } catch (err) {
