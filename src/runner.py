@@ -92,7 +92,7 @@ def best_count(config: dict[str, Any] | None = None, user: dict[str, Any] | None
 
 
 def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[str, Any]:
-    from messengers import build_messenger
+    from messengers import messenger_client_for_user
 
     if not user.get("ai_enabled"):
         raise AppError("رتبه‌بندی هوشمند برای این حساب فعال نیست. از پشتیبانی درخواست کنید.")
@@ -122,13 +122,17 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
         if chosen
         else "آگهی مناسبی با فیلترهای فعال پیدا نشد."
     )
+
+    def client_for(channel: str):
+        if channel not in clients:
+            clients[channel] = messenger_client_for_user(user, channel, config)
+        return clients[channel]
+
     for dest in dests:
         channel = dest["channel"]
         chat_id = dest["chat_id"]
         try:
-            if channel not in clients:
-                clients[channel] = build_messenger(channel, config)
-            clients[channel].send_text(header, chat_id=chat_id)
+            client_for(channel).send_text(header, chat_id=chat_id)
         except Exception:
             continue
     if not chosen:
@@ -141,9 +145,7 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
             channel = dest["channel"]
             chat_id = dest["chat_id"]
             try:
-                if channel not in clients:
-                    clients[channel] = build_messenger(channel, config)
-                clients[channel].send_listing(item, rank=index, reason=reason, chat_id=chat_id)
+                client_for(channel).send_listing(item, rank=index, reason=reason, chat_id=chat_id)
                 sent += 1
             except Exception:
                 continue
@@ -159,7 +161,7 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
 
 
 def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
-    from messengers import build_messenger
+    from messengers import messenger_client_for_user
 
     config = load_config()
     bundles = db.active_users_with_filters()
@@ -174,12 +176,26 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
             "message": "No active linked users with filters.",
             "users": 0,
         }
-    clients: dict[str, Any] = {}
+    shared_clients: dict[str, Any] = {}
     sent = 0
     found = 0
     newest_count = 0
     for bundle in bundles:
         user = bundle["user"]
+        user_clients: dict[str, Any] = {}
+
+        def client_for(channel: str, _user=user, _user_clients=user_clients):
+            ch = str(channel or "telegram")
+            if ch == "eitaa":
+                if ch not in _user_clients:
+                    _user_clients[ch] = messenger_client_for_user(_user, ch, config)
+                return _user_clients[ch]
+            if ch not in shared_clients:
+                from messengers import build_messenger
+
+                shared_clients[ch] = build_messenger(ch, config)
+            return shared_clients[ch]
+
         max_age = user_poll_interval_minutes(user, config)
         for spec in bundle["filters"]:
             filter_id = str(spec.get("id") or "")
@@ -255,9 +271,7 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                 channel = dest["channel"]
                 chat_id = dest["chat_id"]
                 try:
-                    if channel not in clients:
-                        clients[channel] = build_messenger(channel, config)
-                    client = clients[channel]
+                    client = client_for(channel)
                 except Exception as exc:
                     db.log_watch_event(
                         user["id"],

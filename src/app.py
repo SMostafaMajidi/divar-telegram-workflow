@@ -419,6 +419,8 @@ class Handler(BaseHTTPRequestHandler):
                 if len(parts) == 5 and parts[4] == "tickets":
                     status = (query.get("status") or [""])[0].strip() or None
                     return self._json({"tickets": db.list_user_tickets(user_id, status=status)})
+                if len(parts) == 5 and parts[4] == "eitaa":
+                    return self._json(_eitaa_payload(user_id))
                 if len(parts) == 6 and parts[4] == "tickets":
                     ticket = db.get_ticket(parts[5], user_id)
                     if not ticket:
@@ -440,6 +442,9 @@ class Handler(BaseHTTPRequestHandler):
                 from messengers import public_messenger_payload
 
                 return self._json({"messengers": public_messenger_payload(user)})
+            if path == "/api/eitaa":
+                user = self._require_user()
+                return self._json(_eitaa_payload(user["id"]))
             if path == "/api/tickets":
                 user = self._require_user()
                 status = (query.get("status") or [""])[0].strip() or None
@@ -573,6 +578,28 @@ class Handler(BaseHTTPRequestHandler):
                 user = self._require_user()
                 invoice = db.create_invoice(user["id"], str(body.get("plan_id") or ""))
                 return self._json({"invoice": invoice, "payment": payment_info()}, 201)
+            if path == "/api/eitaa":
+                user = self._require_user()
+                return self._json(_save_eitaa_token(user["id"], body))
+            if path == "/api/eitaa/channels":
+                user = self._require_user()
+                return self._json(_add_eitaa_channel(user["id"], body), 201)
+            if path.startswith("/api/admin/users/") and path.endswith("/eitaa"):
+                self._require_admin()
+                user_id = path.strip("/").split("/")[3]
+                if not db.get_user(user_id):
+                    raise AppError("User not found.")
+                return self._json(_save_eitaa_token(user_id, body))
+            if path.startswith("/api/admin/users/") and path.endswith("/eitaa/channels"):
+                self._require_admin()
+                parts = path.strip("/").split("/")
+                # api/admin/users/{id}/eitaa/channels
+                if len(parts) != 6:
+                    raise AppError("Not found.")
+                user_id = parts[3]
+                if not db.get_user(user_id):
+                    raise AppError("User not found.")
+                return self._json(_add_eitaa_channel(user_id, body), 201)
             if path.startswith("/api/invoices/") and path.endswith("/paid"):
                 user = self._require_user()
                 invoice_id = path.split("/")[3]
@@ -864,6 +891,37 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
         try:
+            if path == "/api/eitaa":
+                user = self._require_user()
+                db.clear_messenger_token(user["id"], "eitaa")
+                return self._json({"ok": True, **_eitaa_payload(user["id"])})
+            if path.startswith("/api/eitaa/channels/"):
+                user = self._require_user()
+                chat_id = path.rsplit("/", 1)[-1]
+                db.delete_user_chat(user["id"], "eitaa", chat_id)
+                return self._json({"ok": True, **_eitaa_payload(user["id"])})
+            if path.startswith("/api/admin/users/") and "/eitaa/channels/" in path:
+                self._require_admin()
+                parts = path.strip("/").split("/")
+                # api/admin/users/{id}/eitaa/channels/{chat}
+                if len(parts) != 7:
+                    raise AppError("Not found.")
+                user_id = parts[3]
+                chat_id = parts[6]
+                if not db.get_user(user_id):
+                    raise AppError("User not found.")
+                db.delete_user_chat(user_id, "eitaa", chat_id)
+                return self._json({"ok": True, **_eitaa_payload(user_id)})
+            if path.startswith("/api/admin/users/") and path.endswith("/eitaa"):
+                self._require_admin()
+                parts = path.strip("/").split("/")
+                if len(parts) != 5:
+                    raise AppError("Not found.")
+                user_id = parts[3]
+                if not db.get_user(user_id):
+                    raise AppError("User not found.")
+                db.clear_messenger_token(user_id, "eitaa")
+                return self._json({"ok": True, **_eitaa_payload(user_id)})
             if path.startswith("/api/admin/users/"):
                 self._require_admin()
                 user_id = path.rsplit("/", 1)[-1]
@@ -1120,6 +1178,7 @@ def _admin_user(user: dict) -> dict:
         "default_poll_interval_minutes": poll_interval_minutes(config),
         "default_best_count": user_best_count(None, config),
         "filter_count": db.user_filter_count(user["id"]),
+        "eitaa": _eitaa_payload(user["id"]),
     }
 
 
@@ -1133,20 +1192,80 @@ def _safe_user(user: dict) -> dict:
         "display_name": user["display_name"],
         "ai_enabled": user["ai_enabled"],
         "linked": user["linked"],
+        "eitaa_configured": bool(user.get("eitaa_configured")),
         "public_slug": user.get("public_slug")
         or user.get("login_username")
         or user.get("telegram_username")
         or "",
+        "telegram_chat_id": user.get("telegram_chat_id") or "",
+        "has_password": bool(user.get("has_password")),
         "plan_id": user.get("plan_id") or "trial",
         "plan_name": user.get("plan_name") or "",
-        "max_filters": user.get("effective_max_filters"),
+        "max_filters": user.get("max_filters"),
+        "effective_max_filters": user.get("effective_max_filters"),
         "max_criteria": effective_max_criteria(user),
         "expires_at": user.get("expires_at") or "",
-        "subscription_status": user.get("subscription_status") or "",
-        "telegram_chat_id": user.get("telegram_chat_id") or "",
+        "subscription_status": user.get("subscription_status") or {},
+        "poll_interval_minutes": user.get("poll_interval_minutes"),
+        "best_count": user.get("best_count"),
         "messenger_accounts": user.get("messenger_accounts") or [],
         "api_access": has_api_access(user),
     }
+
+
+def _eitaa_payload(user_id: str) -> dict:
+    cred = db.get_messenger_credential(user_id, "eitaa")
+    channels = db.list_user_chats(user_id, channel="eitaa")
+    return {
+        "configured": bool(cred and cred.get("configured")),
+        "token_masked": (cred or {}).get("token_masked") or "",
+        "updated_at": (cred or {}).get("updated_at") or "",
+        "channels": channels,
+        "instructions": [
+            "در eitaayar.ir ثبت‌نام کنید و توکن API را از بخش API کپی کنید.",
+            "ربات @sender را ادمین کانال/گروه ایتای خود کنید.",
+            "کانال را در پنل ایتایار ثبت کنید و شناسه کانال (عددی یا username بدون @) را بردارید.",
+            "توکن را همین‌جا ذخیره کنید، بعد شناسه کانال را اضافه کنید.",
+            "در فیلتر، پیام‌رسان ایتا را انتخاب کنید و کانال را به‌عنوان مقصد بگذارید.",
+        ],
+        "normalize_hint": "مثال شناسه: mychannel یا 23333622",
+    }
+
+
+def _save_eitaa_token(user_id: str, body: dict) -> dict:
+    from messengers import verify_eitaayar_token
+
+    token = str(body.get("token") or "").strip()
+    if not token:
+        raise AppError("توکن ایتایار را وارد کنید.")
+    info = verify_eitaayar_token(token)
+    label = str(
+        (info.get("username") if isinstance(info, dict) else "")
+        or (info.get("first_name") if isinstance(info, dict) else "")
+        or ""
+    )
+    db.set_messenger_token(user_id, "eitaa", token, label=label)
+    return {"ok": True, "eitaa": _eitaa_payload(user_id), "account": info}
+
+
+def _add_eitaa_channel(user_id: str, body: dict) -> dict:
+    from messengers import normalize_eitaa_chat_id
+
+    if not db.get_messenger_token(user_id, "eitaa"):
+        raise AppError("اول توکن ایتایار را ذخیره کنید.")
+    chat_id = normalize_eitaa_chat_id(str(body.get("chat_id") or body.get("id") or ""))
+    if not chat_id:
+        raise AppError("شناسه کانال ایتا را وارد کنید.")
+    name = str(body.get("name") or chat_id).strip()[:80] or chat_id
+    chat = db.upsert_user_chat(
+        user_id,
+        channel="eitaa",
+        chat_id=chat_id,
+        chat_type="channel",
+        name=name,
+        username=chat_id,
+    )
+    return {"ok": True, "chat": chat, "eitaa": _eitaa_payload(user_id)}
 
 
 class ReuseServer(ThreadingHTTPServer):

@@ -50,6 +50,13 @@ const els = {
   feed: $("#feed-link"),
   apiKey: $("#api-key"),
   deleteBtn: $("#delete-btn"),
+  eitaaStatus: $("#admin-eitaa-status"),
+  eitaaToken: $("#admin-eitaa-token"),
+  eitaaSave: $("#admin-eitaa-save"),
+  eitaaClear: $("#admin-eitaa-clear"),
+  eitaaChannel: $("#admin-eitaa-channel"),
+  eitaaChannelAdd: $("#admin-eitaa-channel-add"),
+  eitaaChannels: $("#admin-eitaa-channels"),
 };
 
 function chatLabel(chat) {
@@ -451,10 +458,56 @@ function render() {
   els.slotHint.textContent = slotHint(user);
   els.feed.href = `/u/${user.public_slug || user.login_username || user.telegram_username}`;
   els.apiKey.textContent = user.api_key ? `API key: ${user.api_key}` : "کلید API هنوز ساخته نشده.";
+  renderEitaaAdmin(user.eitaa || {});
   renderRoutes();
   renderPayments();
   renderWatchLog();
   renderTickets();
+}
+
+function renderEitaaAdmin(eitaa) {
+  if (els.eitaaStatus) {
+    els.eitaaStatus.textContent = eitaa.configured
+      ? `توکن ذخیره شده: ${eitaa.token_masked || "••••"}`
+      : "توکنی برای این مشتری ذخیره نشده.";
+  }
+  if (!els.eitaaChannels) return;
+  els.eitaaChannels.replaceChildren();
+  const channels = eitaa.channels || [];
+  if (!channels.length) {
+    els.eitaaChannels.append(
+      Object.assign(document.createElement("p"), {
+        className: "meta",
+        textContent: "کانالی ثبت نشده.",
+      }),
+    );
+    return;
+  }
+  for (const chat of channels) {
+    const row = document.createElement("div");
+    row.className = "dest-chip";
+    const span = document.createElement("span");
+    span.textContent = chatLabel(chat);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ghost small";
+    btn.textContent = "حذف";
+    btn.onclick = async () => {
+      try {
+        const data = await api(
+          `/api/admin/users/${userId}/eitaa/channels/${encodeURIComponent(chat.id)}`,
+          { method: "DELETE" },
+        );
+        if (state.user) state.user.eitaa = data;
+        renderEitaaAdmin(data);
+        toast("حذف شد", "ok");
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    };
+    row.append(span, btn);
+    els.eitaaChannels.append(row);
+  }
 }
 
 async function loadRoutes() {
@@ -762,6 +815,58 @@ els.deleteBtn.onclick = async () => {
     toast(err.message, "err");
   }
 };
+
+els.eitaaSave?.addEventListener("click", async () => {
+  const token = String(els.eitaaToken?.value || "").trim();
+  if (!token) {
+    toast("توکن را وارد کنید", "err");
+    return;
+  }
+  try {
+    const data = await api(`/api/admin/users/${userId}/eitaa`, {
+      method: "POST",
+      body: { token },
+    });
+    if (els.eitaaToken) els.eitaaToken.value = "";
+    if (state.user) state.user.eitaa = data.eitaa || data;
+    renderEitaaAdmin(state.user.eitaa);
+    toast("توکن ایتا ذخیره شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+els.eitaaClear?.addEventListener("click", async () => {
+  if (!confirm("توکن ایتای این مشتری حذف شود؟")) return;
+  try {
+    const data = await api(`/api/admin/users/${userId}/eitaa`, { method: "DELETE" });
+    if (state.user) state.user.eitaa = data;
+    renderEitaaAdmin(data);
+    toast("توکن حذف شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+els.eitaaChannelAdd?.addEventListener("click", async () => {
+  const chatId = String(els.eitaaChannel?.value || "").trim();
+  if (!chatId) {
+    toast("شناسه کانال را وارد کنید", "err");
+    return;
+  }
+  try {
+    const data = await api(`/api/admin/users/${userId}/eitaa/channels`, {
+      method: "POST",
+      body: { chat_id: chatId },
+    });
+    if (els.eitaaChannel) els.eitaaChannel.value = "";
+    if (state.user) state.user.eitaa = data.eitaa || data;
+    renderEitaaAdmin(state.user.eitaa);
+    toast("کانال اضافه شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
 
 async function boot() {
   bindLogout();

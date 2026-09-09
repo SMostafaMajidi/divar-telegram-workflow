@@ -370,15 +370,36 @@ def messenger_env_token(channel: str) -> str:
     if ch == "bale":
         return os.getenv("BALE_BOT_TOKEN", "").strip()
     if ch == "eitaa":
+        # Legacy/global fallback only; preferred path is per-user token in DB.
         return (
             os.getenv("EITAAYAR_TOKEN", "").strip()
+            or os.getenv("EITAYAR_TOKEN", "").strip()
             or os.getenv("EITAA_BOT_TOKEN", "").strip()
         )
     return os.getenv(f"{ch.upper()}_BOT_TOKEN", "").strip()
 
 
+def verify_eitaayar_token(token: str) -> dict[str, Any]:
+    value = str(token or "").strip()
+    if not value:
+        raise AppError("توکن ایتایار خالی است.")
+    url = EITAAYAR_API.format(token=value, method="getMe")
+    try:
+        response = requests.post(url, timeout=20)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise AppError("ارتباط با ایتایار برقرار نشد.") from exc
+    if not isinstance(data, dict) or not data.get("ok"):
+        raise AppError(
+            (data.get("description") if isinstance(data, dict) else None)
+            or "توکن ایتایار نامعتبر است."
+        )
+    return data.get("result") or {}
+
+
 def messenger_configs(config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Active messenger channels based on env tokens (gradual rollout)."""
+    """Active interactive messenger channels based on env tokens."""
     load_dotenv()
     config = config or load_config()
     telegram_cfg = config.get("telegram") or {}
@@ -388,14 +409,12 @@ def messenger_configs(config: dict[str, Any] | None = None) -> list[dict[str, An
     for channel, cls, deep_hint in (
         ("telegram", TelegramBotClient, "t.me"),
         ("bale", BaleBotClient, "ble.ir"),
-        ("eitaa", EitaaBotClient, "eitaa.com"),
     ):
         token = messenger_env_token(channel)
         if not token:
             continue
         client = cls(bot_token=token, chat_id="0", send_photos=send_photos, delay_seconds=delay)
         username = client.bot_username()
-        link_mode = getattr(cls, "link_mode", "bot")
         out.append(
             {
                 "channel": channel,
@@ -404,7 +423,7 @@ def messenger_configs(config: dict[str, Any] | None = None) -> list[dict[str, An
                 "bot_username": username,
                 "deep_link": client.bot_deep_link("link") if username else "",
                 "deep_hint": deep_hint,
-                "link_mode": link_mode,
+                "link_mode": "bot",
                 "client_cls": cls,
                 "token": token,
                 "send_photos": send_photos,
@@ -414,30 +433,58 @@ def messenger_configs(config: dict[str, Any] | None = None) -> list[dict[str, An
     return out
 
 
-def build_messenger(channel: str, config: dict[str, Any] | None = None) -> MessengerClient:
+def build_messenger(
+    channel: str,
+    config: dict[str, Any] | None = None,
+    *,
+    token: str | None = None,
+) -> MessengerClient:
     load_dotenv()
     config = config or load_config()
     ch = str(channel or "telegram").strip().lower() or "telegram"
-    token = messenger_env_token(ch)
-    if not token:
-        raise AppError(f"توکن ربات {CHANNEL_LABELS.get(ch, ch)} تنظیم نشده است.")
     telegram_cfg = config.get("telegram") or {}
     kwargs = {
-        "bot_token": token,
+        "bot_token": "",
         "chat_id": "0",
         "send_photos": bool(telegram_cfg.get("send_photos", True)),
         "delay_seconds": float(telegram_cfg.get("delay_seconds", 0.8)),
     }
+    if ch == "eitaa":
+        tok = str(token or "").strip() or messenger_env_token("eitaa")
+        if not tok:
+            raise AppError("توکن ایتایار تنظیم نشده است.")
+        kwargs["bot_token"] = tok
+        return EitaaBotClient(**kwargs)
+    tok = str(token or "").strip() or messenger_env_token(ch)
+    if not tok:
+        raise AppError(f"توکن ربات {CHANNEL_LABELS.get(ch, ch)} تنظیم نشده است.")
+    kwargs["bot_token"] = tok
     if ch == "telegram":
         return TelegramBotClient(**kwargs)
     if ch == "bale":
         return BaleBotClient(**kwargs)
-    if ch == "eitaa":
-        return EitaaBotClient(**kwargs)
     raise AppError(f"پیام‌رسان ناشناخته: {ch}")
 
 
+def messenger_client_for_user(
+    user: dict[str, Any],
+    channel: str,
+    config: dict[str, Any] | None = None,
+) -> MessengerClient:
+    import db
+
+    ch = str(channel or "").strip().lower() or "telegram"
+    if ch == "eitaa":
+        tok = db.get_messenger_token(user["id"], "eitaa")
+        if not tok:
+            raise AppError("توکن ایتایار این حساب تنظیم نشده است.")
+        return build_messenger("eitaa", config, token=tok)
+    return build_messenger(ch, config)
+
+
 def public_messenger_payload(user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    import db
+
     accounts = {
         str(a.get("channel") or "").lower(): a
         for a in (user or {}).get("messenger_accounts") or []
@@ -450,19 +497,15 @@ def public_messenger_payload(user: dict[str, Any] | None = None) -> list[dict[st
             "username": user.get("telegram_username") or "",
         }
     eitaa_chats = []
+    eitaa_cred = None
     if user:
-        import db
-
         eitaa_chats = [
             c for c in db.list_user_chats(user["id"], channel="eitaa") if c.get("id")
         ]
+        eitaa_cred = db.get_messenger_credential(user["id"], "eitaa")
     payload = []
     for item in messenger_configs():
         acc = accounts.get(item["channel"])
-        link_mode = item.get("link_mode") or "bot"
-        linked = bool(acc and acc.get("account_id"))
-        if item["channel"] == "eitaa":
-            linked = bool(eitaa_chats)
         payload.append(
             {
                 "channel": item["channel"],
@@ -470,17 +513,35 @@ def public_messenger_payload(user: dict[str, Any] | None = None) -> list[dict[st
                 "enabled": True,
                 "bot_username": item["bot_username"],
                 "deep_link": item["deep_link"],
-                "link_mode": link_mode,
-                "linked": linked,
+                "link_mode": item.get("link_mode") or "bot",
+                "linked": bool(acc and acc.get("account_id")),
+                "configured": True,
                 "account_id": (acc or {}).get("account_id") or "",
                 "username": (acc or {}).get("username") or "",
-                "hint": (
-                    "فقط ارسال به کانال/گروه. @sender را ادمین کنید و شناسه کانال را در مقصد فیلتر وارد کنید."
-                    if link_mode == "channel_only"
-                    else ""
-                ),
+                "hint": "",
             }
         )
+    # Eitaa is always offered; token is per-customer (Eitaayar).
+    payload.append(
+        {
+            "channel": "eitaa",
+            "label": CHANNEL_LABELS["eitaa"],
+            "enabled": True,
+            "bot_username": None,
+            "deep_link": "",
+            "link_mode": "channel_only",
+            "linked": bool(eitaa_cred and eitaa_chats),
+            "configured": bool(eitaa_cred and eitaa_cred.get("configured")),
+            "account_id": "",
+            "username": "",
+            "token_masked": (eitaa_cred or {}).get("token_masked") or "",
+            "channels": eitaa_chats,
+            "hint": (
+                "توکن ایتایار خود را در بخش ایتا ذخیره کنید، @sender را ادمین کانال کنید "
+                "و شناسه کانال را اضافه کنید."
+            ),
+        }
+    )
     return payload
 
 

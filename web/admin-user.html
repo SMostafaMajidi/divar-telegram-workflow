@@ -178,6 +178,24 @@
 
       <div id="more-panel" class="tab-panel settings-clean" data-panel="more" hidden>
         <p class="panel-lead">ابزارها و حذف</p>
+        <div class="tool-block eitaa-setup" id="admin-eitaa-box">
+          <h3 style="margin:0;font-size:15px">ایتا (توکن مشتری)</h3>
+          <p id="admin-eitaa-status" class="meta"></p>
+          <div class="eitaa-token-row">
+            <label class="grow">توکن ایتایار
+              <input id="admin-eitaa-token" type="password" dir="ltr" autocomplete="off" placeholder="توکن مشتری">
+            </label>
+            <button type="button" class="primary small" id="admin-eitaa-save">ذخیره</button>
+            <button type="button" class="ghost small" id="admin-eitaa-clear">حذف</button>
+          </div>
+          <div class="eitaa-channel-row">
+            <label class="grow">شناسه کانال
+              <input id="admin-eitaa-channel" type="text" dir="ltr" placeholder="بدون @">
+            </label>
+            <button type="button" class="ghost small" id="admin-eitaa-channel-add">افزودن کانال</button>
+          </div>
+          <div id="admin-eitaa-channels" class="dest-list"></div>
+        </div>
         <div class="tool-block">
           <div class="row">
             <button id="rotate-btn" class="ghost small" type="button">کلید API جدید</button>
@@ -195,6 +213,6 @@
 
   <script src="/dates.js?v=2"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin-user.js?v=14"></script>
+  <script src="/admin-user.js?v=15"></script>
 </body>
 </html>

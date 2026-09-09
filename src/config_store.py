@@ -477,12 +477,7 @@ def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "telegram_ready": bool(token),
         "bale_token": bool((os.getenv("BALE_BOT_TOKEN") or "").strip()),
         "bale_ready": bool((os.getenv("BALE_BOT_TOKEN") or "").strip()),
-        "eitaa_token": bool(
-            (os.getenv("EITAAYAR_TOKEN") or os.getenv("EITAA_BOT_TOKEN") or "").strip()
-        ),
-        "eitaa_ready": bool(
-            (os.getenv("EITAAYAR_TOKEN") or os.getenv("EITAA_BOT_TOKEN") or "").strip()
-        ),
+        "eitaa_ready": True,
         "bot_username": telegram_bot_username(token) if token else None,
         "llm_ready": bool((os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()),
         "llm_model": (os.getenv("LLM_MODEL") or "gpt-4o-mini").strip(),
