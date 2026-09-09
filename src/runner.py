@@ -92,6 +92,8 @@ def best_count(config: dict[str, Any] | None = None, user: dict[str, Any] | None
 
 
 def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[str, Any]:
+    from messengers import build_messenger
+
     if not user.get("ai_enabled"):
         raise AppError("رتبه‌بندی هوشمند برای این حساب فعال نیست. از پشتیبانی درخواست کنید.")
     specs = db.list_filters(user["id"], enabled_only=True)
@@ -101,25 +103,53 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
     listings = collect_listings(specs)
     wanted = count if count is not None else best_count(config, user)
     chosen, source = pick_best_ai(listings, wanted)
-    notifier = build_notifier(config)
-    chat_id = destination_chat_id(user)
-    if not chat_id:
-        raise AppError("Telegram chat is not linked yet.")
-    if not chosen:
-        notifier.send_text("آگهی مناسبی با فیلترهای فعال پیدا نشد.", chat_id=chat_id)
-        return {"sent": 0, "found": 0, "listings": [], "message": "No matching listings."}
     by_id = {str(spec.get("id")): spec for spec in specs}
+    dests: list[dict[str, str]] = []
+    seen_dest: set[tuple[str, str]] = set()
+    for spec in specs:
+        for d in db.resolve_filter_destinations(user, spec):
+            key = (d["channel"], d["chat_id"])
+            if key in seen_dest:
+                continue
+            seen_dest.add(key)
+            dests.append(d)
+    if not dests:
+        raise AppError("هیچ مقصد ارسالی لینک نشده است.")
+    clients: dict[str, Any] = {}
     label = "با مدل زبانی" if source == "ai" else "با رتبه‌بندی ساده"
-    notifier.send_text(
-        f"{len(chosen)} آگهی برتر از {len(listings)} آگهی فعال ({label}):",
-        chat_id=chat_id,
+    header = (
+        f"{len(chosen)} آگهی برتر از {len(listings)} آگهی فعال ({label}):"
+        if chosen
+        else "آگهی مناسبی با فیلترهای فعال پیدا نشد."
     )
+    for dest in dests:
+        channel = dest["channel"]
+        chat_id = dest["chat_id"]
+        try:
+            if channel not in clients:
+                clients[channel] = build_messenger(channel, config)
+            clients[channel].send_text(header, chat_id=chat_id)
+        except Exception:
+            continue
+    if not chosen:
+        return {"sent": 0, "found": 0, "listings": [], "message": "No matching listings."}
+    sent = 0
     for index, (item, reason) in enumerate(chosen, start=1):
-        target = destination_chat_id(user, by_id.get(item.filter_id))
-        notifier.send_listing(item, rank=index, reason=reason, chat_id=target)
+        spec = by_id.get(str(item.filter_id)) or {}
+        item_dests = db.resolve_filter_destinations(user, spec) or dests
+        for dest in item_dests:
+            channel = dest["channel"]
+            chat_id = dest["chat_id"]
+            try:
+                if channel not in clients:
+                    clients[channel] = build_messenger(channel, config)
+                clients[channel].send_listing(item, rank=index, reason=reason, chat_id=chat_id)
+                sent += 1
+            except Exception:
+                continue
         db.cache_listing(user["id"], item.filter_id, item.to_dict())
     return {
-        "sent": len(chosen),
+        "sent": sent,
         "found": len(listings),
         "source": source,
         "listings": [item.to_dict() for item, _reason in chosen],
