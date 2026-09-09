@@ -16,7 +16,8 @@ const WATCH_STATUS = {
   partial: "جزئی",
   skipped: "رد شده",
 };
-const WATCH_CHANNEL = { telegram: "تلگرام", email: "ایمیل", sms: "پیامک" };
+const WATCH_CHANNEL = { telegram: "تلگرام", bale: "بله", email: "ایمیل", sms: "پیامک" };
+const CHANNEL_LABELS = { telegram: "تلگرام", bale: "بله" };
 const WATCH_PLATFORM = { divar: "دیوار" };
 
 const els = {
@@ -45,8 +46,31 @@ const els = {
 function chatLabel(chat) {
   const kinds = { private: "خصوصی", group: "گروه", supergroup: "گروه", channel: "کانال" };
   const kind = kinds[chat.type] || "";
+  const channel = CHANNEL_LABELS[chat.channel] || chat.channel || "";
   const name = chat.name || (chat.username ? `@${chat.username}` : chat.id);
-  return kind ? `${name} · ${kind}` : String(name);
+  const base = kind ? `${name} · ${kind}` : String(name);
+  return channel ? `${channel} · ${base}` : base;
+}
+
+function formatDestinations(filter) {
+  const dests = filter.destinations || [];
+  if (!dests.length) {
+    return filter.chat_id
+      ? chatLabel({ id: filter.chat_id, channel: "telegram", type: "private" })
+      : "بدون مقصد";
+  }
+  return dests
+    .map((d) => {
+      const chat = state.chats.find(
+        (c) =>
+          (c.channel || "telegram") === (d.channel || "telegram") &&
+          String(c.id) === String(d.chat_id),
+      );
+      return chat
+        ? chatLabel(chat)
+        : `${CHANNEL_LABELS[d.channel] || d.channel} · ${d.chat_id}`;
+    })
+    .join(" · ");
 }
 
 function priceText(filter) {
@@ -180,8 +204,8 @@ function renderRoutes() {
   }
   for (const filter of state.filters) {
     const select = document.createElement("select");
-    fillSelect(select, state.chats, {
-      emptyLabel: "چت شخصی (پیش‌فرض)",
+    fillSelect(select, state.chats.filter((c) => (c.channel || "telegram") === "telegram"), {
+      emptyLabel: "چت شخصی تلگرام (پیش‌فرض)",
       labelFn: chatLabel,
       skipIds: [privateId],
       selected:
@@ -191,13 +215,19 @@ function renderRoutes() {
     });
     select.addEventListener("change", async () => {
       try {
-        const data = await api(`/api/admin/users/${userId}/filters/${filter.id}/chat`, {
+        const destinations = select.value
+          ? [{ channel: "telegram", chat_id: select.value, enabled: true }]
+          : privateId
+            ? [{ channel: "telegram", chat_id: privateId, enabled: true }]
+            : [];
+        const data = await api(`/api/admin/users/${userId}/filters/${filter.id}/destinations`, {
           method: "POST",
-          body: { chat_id: select.value || "" },
+          body: { destinations },
         });
         const i = state.filters.findIndex((f) => f.id === data.filter.id);
         if (i >= 0) state.filters[i] = data.filter;
         toast("مقصد ذخیره شد", "ok");
+        renderRoutes();
       } catch (err) {
         toast(err.message, "err");
         renderRoutes();
@@ -228,15 +258,19 @@ function renderRoutes() {
       dl.append(item);
     }
 
+    const destMeta = document.createElement("p");
+    destMeta.className = "meta";
+    destMeta.textContent = `مقصدها: ${formatDestinations(filter)}`;
+
     const label = document.createElement("label");
     label.className = "chat-target";
-    label.append("ارسال به", select);
+    label.append("مقصد تلگرام (سریع)", select);
 
     const idMeta = document.createElement("p");
     idMeta.className = "meta mono";
     idMeta.textContent = `شناسه فیلتر: ${filter.id}`;
 
-    row.append(head, dl, label, idMeta);
+    row.append(head, dl, destMeta, label, idMeta);
     els.routeList.append(row);
   }
 }
@@ -360,12 +394,16 @@ function render() {
 
   const filterCount = user.filter_count || state.filters.length || 0;
   const exp = user.expires_at ? formatJalali(user.expires_at) : "—";
+  const accounts = (user.messenger_accounts || [])
+    .map((a) => `${CHANNEL_LABELS[a.channel] || a.channel}:${a.account_id}`)
+    .join(" · ");
   els.head.innerHTML = `
     <div class="user-hero-main">
       <div>
         <p class="eyebrow">مشتری</p>
         <h2>${name}</h2>
         <p class="meta">یوزرنیم: @${handle}${user.telegram_username && user.telegram_username !== handle ? ` · تلگرام @${user.telegram_username}` : ""}</p>
+        ${accounts ? `<p class="meta">پیام‌رسان‌ها: <span dir="ltr">${accounts}</span></p>` : ""}
       </div>
       <div class="user-hero-pills">
         <span class="pill ${user.linked ? "ok" : "warn"}">${user.linked ? "متصل" : "منتظر ربات"}</span>

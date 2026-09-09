@@ -120,6 +120,7 @@ def filter_to_api(spec: dict[str, Any]) -> dict[str, Any]:
         "exclude_title": list(spec.get("exclude_title") or []),
         "max_pages": int(spec.get("max_pages") or 3),
         "chat_id": str(spec.get("chat_id") or "").strip(),
+        "destinations": list(spec.get("destinations") or []),
         "fields": fields,
     }
 
@@ -163,6 +164,12 @@ def filter_from_api(body: dict[str, Any], existing: dict[str, Any] | None = None
             "fields": fields,
         }
     )
+    if "destinations" in body and isinstance(body.get("destinations"), list):
+        spec["destinations"] = body["destinations"]
+    elif "destinations" not in spec and spec.get("chat_id"):
+        spec["destinations"] = [
+            {"channel": "telegram", "chat_id": spec["chat_id"], "enabled": True}
+        ]
     spec.pop("chassis_status", None)
     return spec
 
@@ -464,6 +471,8 @@ def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "send_photos": bool((config.get("telegram") or {}).get("send_photos", True)),
         "telegram_token": bool(token),
         "telegram_ready": bool(token),
+        "bale_token": bool((os.getenv("BALE_BOT_TOKEN") or "").strip()),
+        "bale_ready": bool((os.getenv("BALE_BOT_TOKEN") or "").strip()),
         "bot_username": telegram_bot_username(token) if token else None,
         "llm_ready": bool((os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()),
         "llm_model": (os.getenv("LLM_MODEL") or "gpt-4o-mini").strip(),

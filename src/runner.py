@@ -129,6 +129,8 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
 
 
 def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
+    from messengers import build_messenger
+
     config = load_config()
     bundles = db.active_users_with_filters()
     if user_ids is not None:
@@ -142,7 +144,7 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
             "message": "No active linked users with filters.",
             "users": 0,
         }
-    notifier = build_notifier(config)
+    clients: dict[str, Any] = {}
     sent = 0
     found = 0
     newest_count = 0
@@ -175,14 +177,14 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                 if item.age_minutes is not None and item.age_minutes <= max_age
             ]
             newest_count += len(newest)
-            chat_id = destination_chat_id(user, spec)
+            destinations = db.resolve_filter_destinations(user, spec)
             fresh = [
                 item
                 for item in newest
                 if not db.is_seen(user["id"], filter_id, item.token)
             ]
 
-            if not chat_id:
+            if not destinations:
                 db.log_watch_event(
                     user["id"],
                     action="scan",
@@ -193,7 +195,7 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                     channel="telegram",
                     found_count=len(listings),
                     new_count=len(fresh),
-                    message="مقصد تلگرام تنظیم نشده؛ ارسال رد شد.",
+                    message="هیچ مقصد ارسالی تنظیم نشده؛ ارسال رد شد.",
                 )
                 continue
 
@@ -204,32 +206,58 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                 filter_id=filter_id,
                 filter_name=filter_name,
                 platform="divar",
-                channel="telegram",
+                channel=destinations[0]["channel"],
                 found_count=len(listings),
                 new_count=len(fresh),
-                destination=chat_id,
+                destination=",".join(f"{d['channel']}:{d['chat_id']}" for d in destinations),
                 message=(
-                    f"جستجو: {len(listings)} آگهی · تازه: {len(fresh)}"
+                    f"جستجو: {len(listings)} آگهی · تازه: {len(fresh)} · مقصدها: {len(destinations)}"
                     if fresh
                     else f"جستجو: {len(listings)} آگهی · آگهی تازه نبود"
                 ),
             )
 
-            delivered = 0
-            failed = 0
-            last_error = ""
-            for item in fresh:
-                try:
-                    notifier.send_listing(item, chat_id=chat_id)
-                    db.cache_listing(user["id"], filter_id, item.to_dict())
-                    delivered += 1
-                except Exception as exc:
-                    failed += 1
-                    last_error = str(exc)
-            db.mark_seen(user["id"], filter_id, [item.token for item in fresh])
-            sent += delivered
+            if not fresh:
+                continue
 
-            if fresh:
+            any_delivered = False
+            for dest in destinations:
+                channel = dest["channel"]
+                chat_id = dest["chat_id"]
+                try:
+                    if channel not in clients:
+                        clients[channel] = build_messenger(channel, config)
+                    client = clients[channel]
+                except Exception as exc:
+                    db.log_watch_event(
+                        user["id"],
+                        action="deliver",
+                        status="failure",
+                        filter_id=filter_id,
+                        filter_name=filter_name,
+                        platform="divar",
+                        channel=channel,
+                        found_count=len(listings),
+                        new_count=len(fresh),
+                        destination=chat_id,
+                        message=f"پیام‌رسان در دسترس نیست: {exc}",
+                        detail={"error": str(exc)},
+                    )
+                    continue
+
+                delivered = 0
+                failed = 0
+                last_error = ""
+                for item in fresh:
+                    try:
+                        client.send_listing(item, chat_id=chat_id)
+                        db.cache_listing(user["id"], filter_id, item.to_dict())
+                        delivered += 1
+                        any_delivered = True
+                    except Exception as exc:
+                        failed += 1
+                        last_error = str(exc)
+                sent += delivered
                 if failed and not delivered:
                     status = "failure"
                     message = f"ارسال ناموفق ({failed}): {last_error}"
@@ -246,7 +274,7 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                     filter_id=filter_id,
                     filter_name=filter_name,
                     platform="divar",
-                    channel="telegram",
+                    channel=channel,
                     found_count=len(listings),
                     new_count=len(fresh),
                     sent_count=delivered,
@@ -254,6 +282,10 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                     message=message,
                     detail={"failed": failed, "error": last_error} if failed else {},
                 )
+
+            if any_delivered or fresh:
+                # Mark seen once after attempting all destinations to avoid re-spam.
+                db.mark_seen(user["id"], filter_id, [item.token for item in fresh])
     return {
         "sent": sent,
         "found": found,

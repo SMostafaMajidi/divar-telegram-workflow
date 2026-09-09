@@ -21,17 +21,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def connect(path: Path = DB_PATH) -> sqlite3.Connection:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, check_same_thread=False)
+def connect(path: Path | None = None) -> sqlite3.Connection:
+    target = path or DB_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(target, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
-def init_db(path: Path = DB_PATH) -> None:
+def init_db(path: Path | None = None) -> None:
+    target = path or DB_PATH
     with _lock:
-        conn = connect(path)
+        conn = connect(target)
         try:
             conn.executescript(
                 """
@@ -233,10 +235,136 @@ def init_db(path: Path = DB_PATH) -> None:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_watch_events_user ON watch_events(user_id, created_at DESC)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS messenger_accounts (
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    channel TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    username TEXT,
+                    display_name TEXT,
+                    linked_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, channel),
+                    UNIQUE (channel, account_id)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS filter_destinations (
+                    id TEXT PRIMARY KEY,
+                    filter_id TEXT NOT NULL REFERENCES filters(id) ON DELETE CASCADE,
+                    channel TEXT NOT NULL,
+                    chat_id TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (filter_id, channel, chat_id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_filter_destinations_filter ON filter_destinations(filter_id)"
+            )
+            _migrate_messenger_schema(conn)
             _seed_plans(conn)
             conn.commit()
         finally:
             conn.close()
+
+
+def _migrate_messenger_schema(conn: sqlite3.Connection) -> None:
+    """Add channel to user_chats and backfill telegram accounts/destinations."""
+    chat_cols = {row[1] for row in conn.execute("PRAGMA table_info(user_chats)").fetchall()}
+    if chat_cols and "channel" not in chat_cols:
+        conn.execute(
+            """
+            CREATE TABLE user_chats_new (
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                channel TEXT NOT NULL DEFAULT 'telegram',
+                chat_id TEXT NOT NULL,
+                chat_type TEXT,
+                name TEXT,
+                username TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, channel, chat_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO user_chats_new (user_id, channel, chat_id, chat_type, name, username, updated_at)
+            SELECT user_id, 'telegram', chat_id, chat_type, name, username, updated_at
+            FROM user_chats
+            """
+        )
+        conn.execute("DROP TABLE user_chats")
+        conn.execute("ALTER TABLE user_chats_new RENAME TO user_chats")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_chats_user ON user_chats(user_id)")
+
+    # Backfill messenger_accounts from telegram_chat_id
+    users = conn.execute(
+        "SELECT id, telegram_chat_id, telegram_username, display_name FROM users WHERE telegram_chat_id IS NOT NULL AND telegram_chat_id != ''"
+    ).fetchall()
+    now = _now()
+    for row in users:
+        conn.execute(
+            """
+            INSERT INTO messenger_accounts (user_id, channel, account_id, username, display_name, linked_at)
+            VALUES (?, 'telegram', ?, ?, ?, ?)
+            ON CONFLICT(user_id, channel) DO UPDATE SET
+                account_id = excluded.account_id,
+                username = COALESCE(excluded.username, messenger_accounts.username),
+                display_name = COALESCE(excluded.display_name, messenger_accounts.display_name)
+            """,
+            (
+                row["id"],
+                str(row["telegram_chat_id"]),
+                row["telegram_username"] or "",
+                row["display_name"] or "",
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO user_chats (user_id, channel, chat_id, chat_type, name, username, updated_at)
+            VALUES (?, 'telegram', ?, 'private', ?, ?, ?)
+            ON CONFLICT(user_id, channel, chat_id) DO NOTHING
+            """,
+            (
+                row["id"],
+                str(row["telegram_chat_id"]),
+                row["display_name"] or row["telegram_username"] or "چت شخصی",
+                row["telegram_username"] or "",
+                now,
+            ),
+        )
+
+    # Backfill filter_destinations from destination_chat_id
+    filters = conn.execute(
+        "SELECT id, user_id, destination_chat_id FROM filters"
+    ).fetchall()
+    for filt in filters:
+        existing = conn.execute(
+            "SELECT 1 FROM filter_destinations WHERE filter_id = ? LIMIT 1",
+            (filt["id"],),
+        ).fetchone()
+        if existing:
+            continue
+        dest = (filt["destination_chat_id"] or "").strip()
+        if not dest:
+            user = conn.execute(
+                "SELECT telegram_chat_id FROM users WHERE id = ?", (filt["user_id"],)
+            ).fetchone()
+            dest = str((user["telegram_chat_id"] if user else "") or "").strip()
+        if not dest:
+            continue
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO filter_destinations (id, filter_id, channel, chat_id, enabled, created_at)
+            VALUES (?, ?, 'telegram', ?, 1, ?)
+            """,
+            (uuid.uuid4().hex[:12], filt["id"], dest, now),
+        )
 
 
 def _seed_plans(conn: sqlite3.Connection) -> None:
@@ -350,6 +478,8 @@ def _user_public(row: dict[str, Any]) -> dict[str, Any]:
     plan_id = str(row.get("plan_id") or "trial")
     plan = get_plan(plan_id)
     max_filters = row.get("max_filters")
+    accounts = list_messenger_accounts(row["id"])
+    linked = bool(accounts) or bool(row.get("telegram_chat_id"))
     user = {
         "id": row["id"],
         "telegram_username": tg,
@@ -360,7 +490,7 @@ def _user_public(row: dict[str, Any]) -> dict[str, Any]:
         "ai_enabled": bool(row.get("ai_enabled")),
         "active": bool(row.get("active")),
         "created_at": row.get("created_at") or "",
-        "linked": bool(row.get("telegram_chat_id")),
+        "linked": linked,
         "has_password": bool(row.get("password_hash")),
         "public_slug": login or tg,
         "poll_interval_minutes": interval,
@@ -370,6 +500,7 @@ def _user_public(row: dict[str, Any]) -> dict[str, Any]:
         "plan_name": plan.get("name") or plan_id,
         "max_filters": int(max_filters) if max_filters is not None else None,
         "expires_at": row.get("expires_at") or "",
+        "messenger_accounts": accounts,
     }
     user["effective_max_filters"] = effective_max_filters(user)
     user["subscription_status"] = subscription_status(user)
@@ -483,6 +614,17 @@ def register_from_telegram(
                         by_chat["id"],
                     ),
                 )
+                conn.execute(
+                    """
+                    INSERT INTO messenger_accounts (user_id, channel, account_id, username, display_name, linked_at)
+                    VALUES (?, 'telegram', ?, ?, ?, ?)
+                    ON CONFLICT(user_id, channel) DO UPDATE SET
+                        account_id = excluded.account_id,
+                        username = COALESCE(NULLIF(excluded.username, ''), messenger_accounts.username),
+                        display_name = COALESCE(NULLIF(excluded.display_name, ''), messenger_accounts.display_name)
+                    """,
+                    (by_chat["id"], chat_id, tg, display_name.strip() or login, _now()),
+                )
                 conn.commit()
                 row = conn.execute("SELECT * FROM users WHERE id = ?", (by_chat["id"],)).fetchone()
                 return _user_public(dict(row))
@@ -519,6 +661,13 @@ def register_from_telegram(
                     int(plan["poll_interval_minutes"]),
                     plan_expiry_iso(plan["id"]),
                 ),
+            )
+            conn.execute(
+                """
+                INSERT INTO messenger_accounts (user_id, channel, account_id, username, display_name, linked_at)
+                VALUES (?, 'telegram', ?, ?, ?, ?)
+                """,
+                (user_id, chat_id, tg, display_name.strip() or login, _now()),
             )
             conn.commit()
             row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -790,6 +939,7 @@ def user_filter_count(user_id: str) -> int:
 def _chat_public(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(row.get("chat_id") or row.get("id") or ""),
+        "channel": str(row.get("channel") or "telegram"),
         "type": str(row.get("chat_type") or row.get("type") or ""),
         "name": str(row.get("name") or "").strip(),
         "username": str(row.get("username") or "").strip(),
@@ -803,79 +953,95 @@ def upsert_user_chat(
     chat_type: str = "",
     name: str = "",
     username: str = "",
+    channel: str = "telegram",
 ) -> dict[str, Any]:
     cid = str(chat_id or "").strip()
+    ch = str(channel or "telegram").strip().lower() or "telegram"
     if not cid:
         raise AppError("chat_id is required.")
     with _lock:
         conn = connect()
         try:
             existing = conn.execute(
-                "SELECT * FROM user_chats WHERE user_id = ? AND chat_id = ?",
-                (user_id, cid),
+                "SELECT * FROM user_chats WHERE user_id = ? AND channel = ? AND chat_id = ?",
+                (user_id, ch, cid),
             ).fetchone()
             merged_name = name.strip() or ((existing["name"] if existing else "") or "")
             merged_type = chat_type.strip() or ((existing["chat_type"] if existing else "") or "")
             merged_username = username.strip() or ((existing["username"] if existing else "") or "")
             conn.execute(
                 """
-                INSERT INTO user_chats (user_id, chat_id, chat_type, name, username, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, chat_id) DO UPDATE SET
+                INSERT INTO user_chats (user_id, channel, chat_id, chat_type, name, username, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, channel, chat_id) DO UPDATE SET
                     chat_type = excluded.chat_type,
                     name = excluded.name,
                     username = excluded.username,
                     updated_at = excluded.updated_at
                 """,
-                (user_id, cid, merged_type, merged_name, merged_username, _now()),
+                (user_id, ch, cid, merged_type, merged_name, merged_username, _now()),
             )
             conn.commit()
             row = conn.execute(
-                "SELECT * FROM user_chats WHERE user_id = ? AND chat_id = ?",
-                (user_id, cid),
+                "SELECT * FROM user_chats WHERE user_id = ? AND channel = ? AND chat_id = ?",
+                (user_id, ch, cid),
             ).fetchone()
             return _chat_public(dict(row))
         finally:
             conn.close()
 
 
-def list_user_chats(user_id: str) -> list[dict[str, Any]]:
+def list_user_chats(user_id: str, channel: str | None = None) -> list[dict[str, Any]]:
     user = get_user(user_id)
+    ch_filter = str(channel or "").strip().lower() or None
     with _lock:
         conn = connect()
         try:
-            rows = conn.execute(
-                "SELECT * FROM user_chats WHERE user_id = ? ORDER BY updated_at DESC",
-                (user_id,),
-            ).fetchall()
-            chats = {_chat_public(dict(row))["id"]: _chat_public(dict(row)) for row in rows}
+            if ch_filter:
+                rows = conn.execute(
+                    "SELECT * FROM user_chats WHERE user_id = ? AND channel = ? ORDER BY updated_at DESC",
+                    (user_id, ch_filter),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM user_chats WHERE user_id = ? ORDER BY updated_at DESC",
+                    (user_id,),
+                ).fetchall()
+            chats = {
+                ( _chat_public(dict(row))["channel"], _chat_public(dict(row))["id"] ): _chat_public(dict(row))
+                for row in rows
+            }
         finally:
             conn.close()
-    if user and user.get("telegram_chat_id"):
+    if user and user.get("telegram_chat_id") and (not ch_filter or ch_filter == "telegram"):
         private_id = str(user["telegram_chat_id"])
-        if private_id not in chats:
-            chats[private_id] = {
+        key = ("telegram", private_id)
+        if key not in chats:
+            chats[key] = {
                 "id": private_id,
+                "channel": "telegram",
                 "type": "private",
                 "name": user.get("display_name") or user.get("login_username") or "چت شخصی",
                 "username": user.get("telegram_username") or "",
             }
-        elif not chats[private_id].get("name"):
-            chats[private_id]["name"] = (
+        elif not chats[key].get("name"):
+            chats[key]["name"] = (
                 user.get("display_name") or user.get("login_username") or "چت شخصی"
             )
-            if not chats[private_id].get("type"):
-                chats[private_id]["type"] = "private"
+            if not chats[key].get("type"):
+                chats[key]["type"] = "private"
     return sorted(
         chats.values(),
         key=lambda item: (
             0 if item.get("type") == "private" else 1,
+            item.get("channel") or "",
             (item.get("name") or item["id"]).lower(),
         ),
     )
 
 
 def set_filter_chat(user_id: str, filter_id: str, chat_id: str | None) -> dict[str, Any]:
+    """Legacy single-destination setter (telegram). Prefer set_filter_destinations."""
     value = str(chat_id or "").strip() or None
     with _lock:
         conn = connect()
@@ -889,6 +1055,16 @@ def set_filter_chat(user_id: str, filter_id: str, chat_id: str | None) -> dict[s
             conn.commit()
         finally:
             conn.close()
+    destinations = []
+    if value:
+        destinations = [{"channel": "telegram", "chat_id": value, "enabled": True}]
+    else:
+        user = get_user(user_id)
+        if user and user.get("telegram_chat_id"):
+            destinations = [
+                {"channel": "telegram", "chat_id": str(user["telegram_chat_id"]), "enabled": True}
+            ]
+    set_filter_destinations(user_id, filter_id, destinations)
     found = get_filter(filter_id, user_id)
     assert found
     return found
@@ -1056,8 +1232,15 @@ def delete_admin_session(token: str) -> None:
 
 def _filter_from_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     data = dict(row)
+    filter_id = data["id"]
+    destinations = list_filter_destinations(filter_id)
+    chat_id = data.get("destination_chat_id") or ""
+    if not chat_id and destinations:
+        # Prefer telegram destination for legacy chat_id field.
+        tg = next((d for d in destinations if d.get("channel") == "telegram"), destinations[0])
+        chat_id = tg.get("chat_id") or ""
     return {
-        "id": data["id"],
+        "id": filter_id,
         "user_id": data["user_id"],
         "name": data["name"],
         "enabled": bool(data["enabled"]),
@@ -1067,7 +1250,8 @@ def _filter_from_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         "exclude_title": json.loads(data["exclude_json"] or "[]"),
         "fields": json.loads(data["fields_json"] or "{}"),
         "max_pages": int(data.get("max_pages") or 3),
-        "chat_id": data.get("destination_chat_id") or "",
+        "chat_id": chat_id,
+        "destinations": destinations,
         "price_min_toman": data.get("price_min_toman"),
         "price_max_toman": data.get("price_max_toman"),
     }
@@ -1201,6 +1385,16 @@ def upsert_filter(user_id: str, spec: dict[str, Any]) -> dict[str, Any]:
             conn.commit()
         finally:
             conn.close()
+    # Sync multi-destination table.
+    destinations = spec.get("destinations")
+    if isinstance(destinations, list):
+        set_filter_destinations(user_id, filter_id, destinations)
+    elif str(spec.get("chat_id") or "").strip():
+        set_filter_destinations(
+            user_id,
+            filter_id,
+            [{"channel": "telegram", "chat_id": str(spec["chat_id"]).strip(), "enabled": True}],
+        )
     found = get_filter(filter_id, user_id)
     assert found
     return found
@@ -1987,3 +2181,234 @@ def list_watch_events(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
             return [_watch_event_from_row(row) for row in rows]  # type: ignore[misc]
         finally:
             conn.close()
+
+
+def list_messenger_accounts(user_id: str) -> list[dict[str, Any]]:
+    with _lock:
+        conn = connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM messenger_accounts
+                WHERE user_id = ?
+                ORDER BY linked_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+            return [
+                {
+                    "channel": row["channel"],
+                    "account_id": row["account_id"],
+                    "username": row["username"] or "",
+                    "display_name": row["display_name"] or "",
+                    "linked_at": row["linked_at"],
+                }
+                for row in rows
+            ]
+        finally:
+            conn.close()
+
+
+def get_user_by_messenger_account(channel: str, account_id: str) -> dict[str, Any] | None:
+    ch = str(channel or "").strip().lower()
+    aid = str(account_id or "").strip()
+    if not ch or not aid:
+        return None
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT u.* FROM messenger_accounts m
+                JOIN users u ON u.id = m.user_id
+                WHERE m.channel = ? AND m.account_id = ?
+                """,
+                (ch, aid),
+            ).fetchone()
+            if row:
+                return _user_public(dict(row))
+            if ch == "telegram":
+                row = conn.execute(
+                    "SELECT * FROM users WHERE telegram_chat_id = ?", (aid,)
+                ).fetchone()
+                return _user_public(dict(row)) if row else None
+            return None
+        finally:
+            conn.close()
+
+
+def link_messenger_account(
+    user_id: str,
+    *,
+    channel: str,
+    account_id: str,
+    username: str = "",
+    display_name: str = "",
+) -> dict[str, Any]:
+    ch = str(channel or "").strip().lower()
+    aid = str(account_id or "").strip()
+    if not ch or not aid:
+        raise AppError("channel و account_id لازم است.")
+    with _lock:
+        conn = connect()
+        try:
+            clash = conn.execute(
+                """
+                SELECT user_id FROM messenger_accounts
+                WHERE channel = ? AND account_id = ? AND user_id != ?
+                """,
+                (ch, aid, user_id),
+            ).fetchone()
+            if clash:
+                raise AppError("این حساب پیام‌رسان به کاربر دیگری وصل است.")
+            conn.execute(
+                """
+                INSERT INTO messenger_accounts (user_id, channel, account_id, username, display_name, linked_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, channel) DO UPDATE SET
+                    account_id = excluded.account_id,
+                    username = COALESCE(NULLIF(excluded.username, ''), messenger_accounts.username),
+                    display_name = COALESCE(NULLIF(excluded.display_name, ''), messenger_accounts.display_name),
+                    linked_at = excluded.linked_at
+                """,
+                (user_id, ch, aid, username.strip(), display_name.strip(), _now()),
+            )
+            if ch == "telegram":
+                conn.execute(
+                    "UPDATE users SET telegram_chat_id = ? WHERE id = ?",
+                    (aid, user_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    upsert_user_chat(
+        user_id,
+        channel=ch,
+        chat_id=aid,
+        chat_type="private",
+        name=display_name or username or "چت شخصی",
+        username=username,
+    )
+    user = get_user(user_id)
+    assert user
+    return user
+
+
+def link_messenger_by_login(
+    *,
+    channel: str,
+    account_id: str,
+    login_username: str,
+    password: str,
+    username: str = "",
+    display_name: str = "",
+) -> dict[str, Any]:
+    user = authenticate_login(login_username, password)
+    return link_messenger_account(
+        user["id"],
+        channel=channel,
+        account_id=account_id,
+        username=username,
+        display_name=display_name or user.get("display_name") or "",
+    )
+
+
+def list_filter_destinations(filter_id: str) -> list[dict[str, Any]]:
+    with _lock:
+        conn = connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM filter_destinations
+                WHERE filter_id = ?
+                ORDER BY created_at ASC
+                """,
+                (filter_id,),
+            ).fetchall()
+            return [
+                {
+                    "id": row["id"],
+                    "channel": row["channel"],
+                    "chat_id": row["chat_id"],
+                    "enabled": bool(row["enabled"]),
+                }
+                for row in rows
+            ]
+        finally:
+            conn.close()
+
+
+def set_filter_destinations(
+    user_id: str,
+    filter_id: str,
+    destinations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    filt = get_filter(filter_id, user_id)
+    if not filt:
+        raise AppError("Filter not found.")
+    cleaned: list[tuple[str, str, bool]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in destinations or []:
+        ch = str(item.get("channel") or "telegram").strip().lower() or "telegram"
+        cid = str(item.get("chat_id") or "").strip()
+        if not cid:
+            continue
+        key = (ch, cid)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append((ch, cid, bool(item.get("enabled", True))))
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute("DELETE FROM filter_destinations WHERE filter_id = ?", (filter_id,))
+            legacy_chat = None
+            for ch, cid, enabled in cleaned:
+                conn.execute(
+                    """
+                    INSERT INTO filter_destinations (id, filter_id, channel, chat_id, enabled, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (uuid.uuid4().hex[:12], filter_id, ch, cid, 1 if enabled else 0, _now()),
+                )
+                if legacy_chat is None and ch == "telegram" and enabled:
+                    legacy_chat = cid
+            if legacy_chat is None and cleaned:
+                legacy_chat = cleaned[0][1] if cleaned[0][2] else None
+            conn.execute(
+                "UPDATE filters SET destination_chat_id = ? WHERE id = ? AND user_id = ?",
+                (legacy_chat, filter_id, user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return list_filter_destinations(filter_id)
+
+
+def resolve_filter_destinations(user: dict[str, Any], spec: dict[str, Any]) -> list[dict[str, str]]:
+    """Return enabled destinations for watch delivery."""
+    destinations = list(spec.get("destinations") or [])
+    if not destinations and spec.get("id"):
+        destinations = list_filter_destinations(str(spec["id"]))
+    out: list[dict[str, str]] = []
+    for item in destinations:
+        if item.get("enabled") is False:
+            continue
+        ch = str(item.get("channel") or "telegram").strip().lower() or "telegram"
+        cid = str(item.get("chat_id") or "").strip()
+        if cid:
+            out.append({"channel": ch, "chat_id": cid})
+    if out:
+        return out
+    # Legacy fallbacks
+    legacy = str(spec.get("chat_id") or "").strip()
+    if legacy:
+        return [{"channel": "telegram", "chat_id": legacy}]
+    tg = str(user.get("telegram_chat_id") or "").strip()
+    if tg:
+        return [{"channel": "telegram", "chat_id": tg}]
+    for acc in user.get("messenger_accounts") or []:
+        aid = str(acc.get("account_id") or "").strip()
+        if aid:
+            return [{"channel": str(acc.get("channel") or "telegram"), "chat_id": aid}]
+    return []

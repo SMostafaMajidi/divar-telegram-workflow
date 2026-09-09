@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>پنل مشتری — دیوار واچر</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark4">
+  <link rel="stylesheet" href="/styles.css?v=dark5">
 </head>
 <body>
   <header class="topbar">
@@ -39,10 +39,18 @@
       <div id="toast" class="toast" hidden></div>
 
       <ol class="portal-guide">
+        <li><b>پیام‌رسان را وصل کن</b> — ربات فعال را استارت/لاگین کن.</li>
         <li><b>فیلتر بساز</b> — دسته، شهر و شرایط آگهی را مشخص کن.</li>
-        <li><b>مقصد را انتخاب کن</b> — آگهی‌ها به چت شخصی یا گروه/کانال بروند.</li>
-        <li><b>فعال بگذار</b> — پایش خودکار آگهی تازه را می‌فرستد.</li>
+        <li><b>مقصدها را انتخاب کن</b> — یک فیلتر می‌تواند به چند چت در چند پیام‌رسان برود.</li>
       </ol>
+
+      <div class="panel-head tight" style="margin-top:8px">
+        <div>
+          <h2 style="margin:0;font-size:16px">پیام‌رسان‌ها</h2>
+          <p class="meta" style="margin:4px 0 0">ربات‌های فعال را وصل کنید تا چت‌ها قابل انتخاب شوند.</p>
+        </div>
+      </div>
+      <div id="messenger-list" class="messenger-grid"></div>
 
       <div class="panel-head">
         <div>
@@ -64,7 +72,7 @@
       <div class="panel-head">
         <div>
           <h2 id="results-title">آگهی‌های اخیر</h2>
-          <p class="meta" style="margin:4px 0 0">همان‌هایی که به تلگرام هم رفته‌اند</p>
+          <p class="meta" style="margin:4px 0 0">همان‌هایی که به مقصدهای فیلتر هم رفته‌اند</p>
         </div>
         <span id="results-meta" class="muted"></span>
       </div>
@@ -106,10 +114,17 @@
         <div id="exclude-chips" class="chips"></div>
         <input id="exclude-input" placeholder="کلمه و Enter">
       </div>
-      <label>مقصد تلگرام
-        <select name="chat_id" id="filter-chat"></select>
-      </label>
-      <p class="hint">پیش‌فرض = چت شخصی. برای گروه/کانال ربات را ادمین کنید و یک پیام بفرستید.</p>
+      <div class="field dest-builder">
+        <span>مقصدهای ارسال</span>
+        <div id="dest-list" class="dest-list"></div>
+        <div class="dest-add-row">
+          <select id="dest-channel"></select>
+          <select id="dest-chat"></select>
+          <button type="button" class="ghost small" id="dest-add-btn">افزودن</button>
+        </div>
+        <p class="hint">اول پیام‌رسان، بعد چت. می‌توانید چند مقصد از چند پیام‌رسان اضافه کنید.</p>
+      </div>
+      <input type="hidden" name="chat_id" id="filter-chat" value="">
       <div class="row">
         <label>تعداد صفحات دیوار
           <input name="max_pages" type="number" min="1" max="8" value="3">
@@ -126,6 +141,6 @@
     </form>
   </dialog>
   <script src="/dates.js?v=1"></script>
-  <script src="/portal.js?v=9"></script>
+  <script src="/portal.js?v=10"></script>
 </body>
 </html>

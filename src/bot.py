@@ -5,20 +5,22 @@ import threading
 import time
 
 from config_store import AppError, load_config, load_dotenv, public_base_url
-from notifier import TelegramNotifier, chat_record
-from runner import best_count, build_notifier, send_best_for_user
+from messengers import CHANNEL_LABELS, build_messenger
+from notifier import chat_record
+from runner import best_count, send_best_for_user
 import db
 
 HELP = (
     "به دیوار واچر خوش آمدید.\n\n"
     "شروع سریع:\n"
-    "۱) /start و ساخت یوزرنیم/رمز پنل\n"
+    "۱) /start و ساخت یوزرنیم/رمز پنل (یا /login برای اتصال حساب موجود)\n"
     "۲) ورود به پنل وب و ساخت فیلتر\n"
-    "۳) انتخاب مقصد تلگرام برای هر فیلتر\n"
+    "۳) انتخاب یک یا چند مقصد ارسال برای هر فیلتر\n"
     "۴) در صورت نیاز خرید پلن از صفحه قیمت\n\n"
     "دستورها:\n"
     "• /start — ثبت‌نام یا وضعیت حساب\n"
-    "• /cancel — لغو ثبت‌نام\n"
+    "• /login — اتصال حساب وب به این چت\n"
+    "• /cancel — لغو\n"
     "• لینک پنل — آدرس ورود وب\n"
     "• ۵ تا بهترین / /best — در صورت فعال بودن هوش مصنوعی\n\n"
     f"پلن‌ها: {public_base_url()}/pricing\n"
@@ -34,8 +36,9 @@ _pending_lock = threading.Lock()
 _pending: dict[str, dict] = {}
 
 
-class TelegramBot:
-    def __init__(self) -> None:
+class MessengerBot:
+    def __init__(self, channel: str = "telegram") -> None:
+        self.channel = str(channel or "telegram").strip().lower() or "telegram"
         self.running = False
         self.last_message = ""
         self._stop = threading.Event()
@@ -47,7 +50,11 @@ class TelegramBot:
             return
         self._stop.clear()
         self.running = True
-        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread = threading.Thread(
+            target=self._loop,
+            daemon=True,
+            name=f"bot-{self.channel}",
+        )
         self._thread.start()
 
     def stop(self) -> None:
@@ -57,7 +64,7 @@ class TelegramBot:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
-                notifier = build_notifier(load_config(), require_chat=False)
+                notifier = build_messenger(self.channel, load_config())
                 self._poll(notifier)
             except AppError as exc:
                 self.last_message = str(exc)
@@ -68,7 +75,7 @@ class TelegramBot:
                 if self._stop.wait(3):
                     break
 
-    def _poll(self, notifier: TelegramNotifier) -> None:
+    def _poll(self, notifier) -> None:
         try:
             backlog = notifier.get_updates(offset=self._offset, timeout=0)
             for update in backlog:
@@ -110,7 +117,9 @@ class TelegramBot:
             return
         user = None
         # Prefer chat already linked as the user's private chat.
-        user = db.get_user_by_chat_id(record["id"])
+        user = db.get_user_by_messenger_account(self.channel, record["id"]) or (
+            db.get_user_by_chat_id(record["id"]) if self.channel == "telegram" else None
+        )
         if not user:
             sender = (
                 (update.get("message") or {}).get("from")
@@ -126,6 +135,7 @@ class TelegramBot:
         try:
             db.upsert_user_chat(
                 user["id"],
+                channel=self.channel,
                 chat_id=record["id"],
                 chat_type=record.get("type") or "",
                 name=record.get("name") or "",
@@ -136,7 +146,7 @@ class TelegramBot:
 
     def _handle(
         self,
-        notifier: TelegramNotifier,
+        notifier,
         text: str,
         chat_id: str,
         message: dict,
@@ -151,11 +161,24 @@ class TelegramBot:
 
         pending = _get_pending(chat_id)
         if pending:
-            self._continue_register(notifier, chat_id, message, command, pending)
+            if pending.get("mode") == "login":
+                self._continue_login(notifier, chat_id, message, command, pending)
+            else:
+                self._continue_register(notifier, chat_id, message, command, pending)
             return
 
-        if lowered in {"/start", "/help", "help", "راهنما"}:
+        parts = lowered.split(maxsplit=1)
+        start_cmd = parts[0] if parts else ""
+        start_payload = parts[1] if len(parts) > 1 else ""
+
+        if start_cmd in {"/start", "/help", "help", "راهنما"}:
+            if start_payload in {"link", "login"} or start_payload.startswith("link"):
+                self._begin_login(notifier, chat_id, message)
+                return
             self._start(notifier, chat_id, message)
+            return
+        if lowered in {"/login", "login", "ورود"}:
+            self._begin_login(notifier, chat_id, message)
             return
         if lowered in {"/resetpass", "resetpass"}:
             _set_pending(chat_id, {"step": "username", "reset": True})
@@ -164,11 +187,13 @@ class TelegramBot:
                 chat_id=chat_id,
             )
             return
-        if lowered in {"لینک پنل", "/portal", "/login"}:
+        if lowered in {"لینک پنل", "/portal"}:
             self._send_portal_link(notifier, chat_id)
             return
 
-        user = db.get_user_by_chat_id(chat_id)
+        user = db.get_user_by_messenger_account(self.channel, chat_id) or (
+            db.get_user_by_chat_id(chat_id) if self.channel == "telegram" else None
+        )
         count = _requested_count(command, user)
         if count is None:
             notifier.send_text(
@@ -195,44 +220,115 @@ class TelegramBot:
             self.last_message = str(exc)
             notifier.send_text("جستجو با مشکل مواجه شد. کمی بعد دوباره تلاش کنید.", chat_id=chat_id)
 
-    def _start(self, notifier: TelegramNotifier, chat_id: str, message: dict) -> None:
-        user = db.get_user_by_chat_id(chat_id)
+    def _start(self, notifier, chat_id: str, message: dict) -> None:
+        user = db.get_user_by_messenger_account(self.channel, chat_id) or (
+            db.get_user_by_chat_id(chat_id) if self.channel == "telegram" else None
+        )
         login_url = public_base_url()
+        label = CHANNEL_LABELS.get(self.channel, self.channel)
         if user and user.get("has_password") and user.get("login_username"):
             try:
-                db.upsert_user_chat(
+                db.link_messenger_account(
                     user["id"],
-                    chat_id=chat_id,
-                    chat_type=str((message.get("chat") or {}).get("type") or "private"),
-                    name=user.get("display_name") or user.get("login_username") or "",
+                    channel=self.channel,
+                    account_id=chat_id,
                     username=user.get("telegram_username") or "",
+                    display_name=user.get("display_name") or "",
                 )
             except Exception:
-                pass
+                try:
+                    db.upsert_user_chat(
+                        user["id"],
+                        channel=self.channel,
+                        chat_id=chat_id,
+                        chat_type=str((message.get("chat") or {}).get("type") or "private"),
+                        name=user.get("display_name") or user.get("login_username") or "",
+                        username=user.get("telegram_username") or "",
+                    )
+                except Exception:
+                    pass
             notifier.send_text(
-                f"حساب شما فعال است.\n"
+                f"حساب شما فعال است ({label}).\n"
                 f"یوزرنیم ورود: `{user['login_username']}`\n"
                 f"ورود به پنل:\n{login_url}\n\n"
-                "فیلتر بسازید؛ پایش خودکار آگهی‌های تازه را به همین چت می‌فرستد.\n"
+                "فیلتر بسازید و چند مقصد ارسال انتخاب کنید.\n"
                 "برای افزودن گروه/کانال: ربات را آنجا ادمین کنید و یک پیام بفرستید.\n"
-                "برای تغییر یوزرنیم/رمز: /resetpass",
+                "اتصال حساب وب: /login\n"
+                "تغییر یوزرنیم/رمز: /resetpass",
                 reply_markup=KEYBOARD,
                 chat_id=chat_id,
             )
             return
 
-        _set_pending(chat_id, {"step": "username", "reset": bool(user)})
+        _set_pending(chat_id, {"step": "username", "reset": bool(user), "channel": self.channel})
         notifier.send_text(
-            "ثبت‌نام دیوار واچر\n\n"
+            f"ثبت‌نام دیوار واچر ({label})\n\n"
             "یوزرنیم ورود به پنل را بفرستید "
             "(انگلیسی، عدد و _ ، حداقل ۳ کاراکتر).\n"
+            "اگر قبلاً در سایت ثبت‌نام کرده‌اید /login بزنید.\n"
             "برای لغو: /cancel",
             chat_id=chat_id,
         )
 
+    def _begin_login(self, notifier, chat_id: str, message: dict) -> None:
+        _set_pending(chat_id, {"mode": "login", "step": "username", "channel": self.channel})
+        notifier.send_text(
+            "یوزرنیم ورود سایت را بفرستید تا این چت به حساب‌تان وصل شود:\n(یا /cancel)",
+            chat_id=chat_id,
+        )
+
+    def _continue_login(
+        self,
+        notifier,
+        chat_id: str,
+        message: dict,
+        command: str,
+        pending: dict,
+    ) -> None:
+        step = pending.get("step")
+        label = CHANNEL_LABELS.get(self.channel, self.channel)
+        if step == "username":
+            try:
+                login = db.normalize_login_username(command)
+            except Exception as exc:
+                notifier.send_text(str(exc), chat_id=chat_id)
+                return
+            _set_pending(chat_id, {**pending, "step": "password", "login_username": login})
+            notifier.send_text("رمز عبور پنل را بفرستید:", chat_id=chat_id)
+            return
+        if step == "password":
+            login = str(pending.get("login_username") or "")
+            sender = message.get("from") or {}
+            try:
+                user = db.link_messenger_by_login(
+                    channel=self.channel,
+                    account_id=chat_id,
+                    login_username=login,
+                    password=command,
+                    username=str(sender.get("username") or ""),
+                    display_name=str(sender.get("first_name") or ""),
+                )
+            except Exception as exc:
+                notifier.send_text(str(exc), chat_id=chat_id)
+                return
+            _clear_pending(chat_id)
+            notifier.send_text(
+                f"اتصال برقرار شد ✅\n"
+                f"حساب @{user.get('login_username')} به {label} لینک شد.\n"
+                f"پنل:\n{public_base_url()}",
+                reply_markup=KEYBOARD,
+                chat_id=chat_id,
+            )
+            self.last_message = (
+                f"Linked @{user.get('login_username')} channel={self.channel} chat={chat_id}"
+            )
+            return
+        _clear_pending(chat_id)
+        notifier.send_text("ورود نامعتبر بود. دوباره /login بزنید.", chat_id=chat_id)
+
     def _continue_register(
         self,
-        notifier: TelegramNotifier,
+        notifier,
         chat_id: str,
         message: dict,
         text: str,
@@ -255,13 +351,29 @@ class TelegramBot:
             tg_username = str(from_user.get("username") or "").strip()
             display = str(from_user.get("first_name") or "").strip()
             try:
-                user = db.register_from_telegram(
-                    login_username=login,
-                    password=text,
-                    chat_id=chat_id,
-                    telegram_username=tg_username,
-                    display_name=display,
-                )
+                if self.channel == "telegram":
+                    user = db.register_from_telegram(
+                        login_username=login,
+                        password=text,
+                        chat_id=chat_id,
+                        telegram_username=tg_username,
+                        display_name=display,
+                    )
+                else:
+                    placeholder = f"{self.channel}_{chat_id}"[-32:]
+                    user = db.create_user(
+                        placeholder,
+                        display_name=display or login,
+                        login_username=login,
+                        password=text,
+                    )
+                    user = db.link_messenger_account(
+                        user["id"],
+                        channel=self.channel,
+                        account_id=chat_id,
+                        username=tg_username,
+                        display_name=display or login,
+                    )
             except AppError as exc:
                 notifier.send_text(str(exc), chat_id=chat_id)
                 return
@@ -270,10 +382,11 @@ class TelegramBot:
             try:
                 db.upsert_user_chat(
                     user["id"],
+                    channel=self.channel,
                     chat_id=chat_id,
                     chat_type=str((message.get("chat") or {}).get("type") or "private"),
                     name=user.get("display_name") or user.get("login_username") or "",
-                    username=user.get("telegram_username") or "",
+                    username=tg_username or user.get("telegram_username") or "",
                 )
             except Exception:
                 pass
@@ -281,19 +394,23 @@ class TelegramBot:
                 "ثبت‌نام انجام شد.\n\n"
                 f"یوزرنیم: `{user['login_username']}`\n"
                 f"ورود به پنل:\n{login_url}\n\n"
-                "در پنل فیلتر بسازید؛ آگهی‌های تازه به همین چت ارسال می‌شود.\n"
+                "در پنل فیلتر بسازید و مقصدهای ارسال را انتخاب کنید.\n"
                 "برای افزودن گروه/کانال: ربات را عضو کنید و یک پیام بفرستید.",
                 reply_markup=KEYBOARD,
                 chat_id=chat_id,
             )
-            self.last_message = f"Registered @{user['login_username']} chat={chat_id}"
+            self.last_message = (
+                f"Registered @{user['login_username']} channel={self.channel} chat={chat_id}"
+            )
             return
 
         _clear_pending(chat_id)
         notifier.send_text("ثبت‌نام نامعتبر بود. دوباره /start بزنید.", chat_id=chat_id)
 
-    def _send_portal_link(self, notifier: TelegramNotifier, chat_id: str) -> None:
-        user = db.get_user_by_chat_id(chat_id)
+    def _send_portal_link(self, notifier, chat_id: str) -> None:
+        user = db.get_user_by_messenger_account(self.channel, chat_id) or (
+            db.get_user_by_chat_id(chat_id) if self.channel == "telegram" else None
+        )
         login_url = public_base_url()
         if not user or not user.get("has_password"):
             notifier.send_text("ابتدا /start بزنید و یوزرنیم/رمز را تنظیم کنید.", chat_id=chat_id)
@@ -302,6 +419,9 @@ class TelegramBot:
             f"ورود به پنل با یوزرنیم `{user['login_username']}`:\n{login_url}",
             chat_id=chat_id,
         )
+
+
+TelegramBot = MessengerBot
 
 
 def _get_pending(chat_id: str) -> dict | None:
@@ -337,7 +457,7 @@ def _requested_count(text: str, user: dict | None = None) -> int | None:
 
 def run_bot() -> None:
     load_dotenv()
-    bot = TelegramBot()
+    bot = MessengerBot("telegram")
     print("Telegram bot listening")
     bot.start()
     try:

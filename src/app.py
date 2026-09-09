@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import re
 import threading
 import time
@@ -11,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bot import TelegramBot
+from bot import MessengerBot
 from categories import category_payload
 from config_store import (
     ROOT,
@@ -42,7 +43,9 @@ from plans import has_api_access
 import db
 
 WEB_DIR = ROOT / "web"
-BOT = TelegramBot()
+BOT = MessengerBot("telegram")
+BALE_BOT = MessengerBot("bale")
+BOTS = (BOT, BALE_BOT)
 
 
 class Watcher:
@@ -315,8 +318,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/status":
                 status = public_settings()
                 status["watching"] = WATCHER.running
-                status["bot_running"] = BOT.running
-                status["last_message"] = WATCHER.last_message or BOT.last_message
+                status["bot_running"] = any(bot.running for bot in BOTS)
+                status["bots"] = {bot.channel: bot.running for bot in BOTS}
+                status["last_message"] = WATCHER.last_message or next(
+                    (bot.last_message for bot in BOTS if bot.last_message), ""
+                )
                 status["next_watch_at"] = WATCHER.next_run_at or None
                 status["user_count"] = len(db.list_users())
                 return self._json(status)
@@ -413,10 +419,23 @@ class Handler(BaseHTTPRequestHandler):
                 raise AppError("Not found.")
             if path == "/api/me":
                 user = self._require_user()
-                return self._json({"user": _safe_user(user)})
+                from messengers import public_messenger_payload
+
+                return self._json(
+                    {
+                        "user": _safe_user(user),
+                        "messengers": public_messenger_payload(user),
+                    }
+                )
+            if path == "/api/messengers":
+                user = self._require_user()
+                from messengers import public_messenger_payload
+
+                return self._json({"messengers": public_messenger_payload(user)})
             if path == "/api/chats":
                 user = self._require_user()
-                return self._json({"chats": db.list_user_chats(user["id"])})
+                channel = (query.get("channel") or [""])[0].strip() or None
+                return self._json({"chats": db.list_user_chats(user["id"], channel=channel)})
             if path == "/api/filters":
                 user = self._require_user()
                 return self._json({"filters": [filter_to_api(spec) for spec in db.list_filters(user["id"])]})
@@ -607,7 +626,32 @@ class Handler(BaseHTTPRequestHandler):
             if path.endswith("/chat") and path.startswith("/api/filters/"):
                 user = self._require_user()
                 filter_id = path.split("/")[3]
-                saved = db.set_filter_chat(user["id"], filter_id, body.get("chat_id"))
+                if "destinations" in body and isinstance(body.get("destinations"), list):
+                    db.set_filter_destinations(user["id"], filter_id, body["destinations"])
+                    saved = db.get_filter(filter_id, user["id"])
+                else:
+                    saved = db.set_filter_chat(user["id"], filter_id, body.get("chat_id"))
+                return self._json({"filter": filter_to_api(saved)})
+            if path.endswith("/destinations") and path.startswith("/api/filters/"):
+                user = self._require_user()
+                filter_id = path.split("/")[3]
+                db.set_filter_destinations(user["id"], filter_id, body.get("destinations") or [])
+                saved = db.get_filter(filter_id, user["id"])
+                if not saved:
+                    raise AppError("Filter not found.")
+                return self._json({"filter": filter_to_api(saved)})
+            if path.startswith("/api/admin/users/") and path.endswith("/destinations"):
+                self._require_admin()
+                parts = path.strip("/").split("/")
+                # api/admin/users/{uid}/filters/{fid}/destinations
+                if len(parts) != 7 or parts[4] != "filters":
+                    raise AppError("Not found.")
+                user_id = parts[3]
+                filter_id = parts[5]
+                if not db.get_user(user_id):
+                    raise AppError("User not found.")
+                db.set_filter_destinations(user_id, filter_id, body.get("destinations") or [])
+                saved = db.get_filter(filter_id, user_id)
                 return self._json({"filter": filter_to_api(saved)})
             if path == "/api/preview":
                 self._require_user()
@@ -629,7 +673,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(
                     {
                         "watching": WATCHER.running,
-                        "bot_running": BOT.running,
+                        "bot_running": any(bot.running for bot in BOTS),
+                        "bots": {bot.channel: bot.running for bot in BOTS},
                         "last_message": WATCHER.last_message,
                         "next_watch_at": WATCHER.next_run_at or None,
                     }
@@ -953,6 +998,7 @@ def _safe_user(user: dict) -> dict:
         "expires_at": user.get("expires_at") or "",
         "subscription_status": user.get("subscription_status") or "",
         "telegram_chat_id": user.get("telegram_chat_id") or "",
+        "messenger_accounts": user.get("messenger_accounts") or [],
         "api_access": has_api_access(user),
     }
 
@@ -969,6 +1015,10 @@ def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
     if settings["telegram_token"]:
         BOT.start()
         print("Telegram bot listening", flush=True)
+    if (os.getenv("BALE_BOT_TOKEN") or "").strip():
+        BALE_BOT.start()
+        print("Bale bot listening", flush=True)
+    if any(bot.running for bot in BOTS):
         try:
             WATCHER.start()
             print("Watcher started automatically", flush=True)
@@ -981,7 +1031,8 @@ def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nServer stopped.")
-        BOT.stop()
+        for bot in BOTS:
+            bot.stop()
         WATCHER.stop()
         server.server_close()
 

@@ -1329,6 +1329,65 @@ textarea {
 }
 .portal-foot .meta { margin: 0; }
 
+.messenger-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 10px 0 18px;
+}
+.messenger-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  text-decoration: none;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.messenger-card:hover {
+  border-color: rgba(61, 214, 198, 0.45);
+  background: rgba(61, 214, 198, 0.06);
+}
+.messenger-card.linked {
+  border-color: rgba(61, 214, 198, 0.35);
+}
+.messenger-card strong {
+  font-size: 15px;
+}
+.dest-builder {
+  display: grid;
+  gap: 8px;
+}
+.dest-list {
+  display: grid;
+  gap: 6px;
+  min-height: 28px;
+}
+.dest-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+}
+.dest-add-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .dest-add-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .nav-menu {
   position: relative;
 }
