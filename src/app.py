@@ -597,6 +597,22 @@ class Handler(BaseHTTPRequestHandler):
                         invoice_id, user["id"], str(body.get("payer_note") or "")
                     )
                 return self._json({"invoice": invoice})
+            if path.startswith("/api/invoices/") and path.endswith("/pay-bale"):
+                user = self._require_user()
+                invoice_id = path.split("/")[3]
+                invoice = db.get_invoice(invoice_id)
+                if not invoice or invoice["user_id"] != user["id"]:
+                    raise AppError("فاکتور پیدا نشد.")
+                from bale_payments import send_wallet_invoice
+
+                result = send_wallet_invoice(user, invoice)
+                return self._json(
+                    {
+                        "ok": True,
+                        "invoice": db.get_invoice(invoice_id),
+                        "bale": result,
+                    }
+                )
             if path.startswith("/api/admin/invoices/") and path.endswith("/confirm"):
                 self._require_admin()
                 invoice_id = path.split("/")[4]

@@ -35,7 +35,9 @@ function render(invoices) {
       <div class="card-top">
         <div>
           <h3>${name}</h3>
-          <p class="meta">${inv.plan_name} · ${inv.amount_label} · شناسه <b dir="ltr">${inv.ref_code}</b></p>
+          <p class="meta">${inv.plan_name} · ${inv.amount_label} · شناسه <b dir="ltr">${inv.ref_code}</b>${
+            inv.payment_method === "bale_wallet" ? " · بله" : inv.payment_method === "card" ? " · کارت" : ""
+          }</p>
           <p class="meta">یوزرنیم: @${inv.login_username || "—"} · توضیح: ${inv.payer_note || "—"}</p>
           <p class="meta">${typeof formatJalali === "function" ? formatJalali(inv.created_at, { withTime: true }) : inv.created_at}</p>
         </div>

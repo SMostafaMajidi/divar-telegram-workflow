@@ -958,9 +958,30 @@ select[multiple] { min-height: 120px; }
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.03);
   display: grid;
-  gap: 8px;
+  gap: 16px;
 }
 .pay-box h3 { margin: 0; font-size: 16px; }
+.pay-method { display: grid; gap: 8px; }
+.pay-bale-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.ok-hint { color: var(--ok, #3dd6c6); }
+.bale-pay-notice {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(61, 214, 198, 0.35);
+  background: rgba(61, 214, 198, 0.1);
+}
+.bale-pay-notice strong { font-size: 15px; }
+.bale-pay-notice p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted, #9aa3af); }
+.bale-pay-notice a.primary { justify-self: start; }
 .payment-page { overflow: visible; }
 
 .pay-amount-box {

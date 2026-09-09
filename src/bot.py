@@ -91,6 +91,9 @@ class MessengerBot:
                 continue
             for update in updates:
                 self._offset = int(update.get("update_id") or 0) + 1
+                if self.channel == "bale" and update.get("pre_checkout_query"):
+                    self._handle_pre_checkout(notifier, update["pre_checkout_query"])
+                    continue
                 self._remember_chats(update)
                 message = (
                     update.get("message")
@@ -98,11 +101,53 @@ class MessengerBot:
                     or update.get("channel_post")
                     or {}
                 )
+                if self.channel == "bale" and message.get("successful_payment"):
+                    self._handle_successful_payment(notifier, message)
+                    continue
                 chat_id = str((message.get("chat") or {}).get("id") or "")
                 text = str(message.get("text") or "").strip()
                 if not chat_id or not text:
                     continue
                 self._handle(notifier, text, chat_id, message)
+
+    def _handle_pre_checkout(self, notifier, query: dict) -> None:
+        try:
+            from bale_payments import handle_pre_checkout_query
+
+            handle_pre_checkout_query(notifier, query)
+            self.last_message = "pre_checkout ok"
+        except Exception as exc:
+            self.last_message = f"pre_checkout: {exc}"
+
+    def _handle_successful_payment(self, notifier, message: dict) -> None:
+        chat_id = str((message.get("chat") or {}).get("id") or "")
+        try:
+            from bale_payments import handle_successful_payment
+
+            result = handle_successful_payment(message)
+            if not result:
+                if chat_id:
+                    notifier.send_text("پرداخت دریافت شد ولی فاکتور پیدا نشد.", chat_id=chat_id)
+                return
+            inv = result.get("invoice") or {}
+            plan = inv.get("plan_name") or inv.get("plan_id") or ""
+            if chat_id:
+                notifier.send_text(
+                    f"پرداخت موفق بود. پلن «{plan}» فعال شد.\n"
+                    f"صورتحساب: {public_base_url()}/app/billing",
+                    chat_id=chat_id,
+                )
+            self.last_message = f"wallet paid {inv.get('id')}"
+        except Exception as exc:
+            self.last_message = f"successful_payment: {exc}"
+            if chat_id:
+                try:
+                    notifier.send_text(
+                        "پرداخت انجام شد ولی فعال‌سازی خودکار با خطا مواجه شد. با پشتیبانی هماهنگ کنید.",
+                        chat_id=chat_id,
+                    )
+                except Exception:
+                    pass
 
     def _remember_chats(self, update: dict) -> None:
         record = chat_record(

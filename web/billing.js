@@ -11,6 +11,9 @@ const STATUS = {
   cancelled: "لغو شده",
 };
 
+let paymentState = {};
+let messengersState = [];
+
 function toast(msg, kind = "") {
   toastEl.hidden = !msg;
   toastEl.className = `toast ${kind}`.trim();
@@ -33,14 +36,54 @@ async function api(path, options = {}) {
   return data;
 }
 
+function baleLinked() {
+  return (messengersState || []).some((m) => m.channel === "bale" && m.linked);
+}
+
+function baleDeepLink() {
+  const m = (messengersState || []).find((x) => x.channel === "bale");
+  return (m && m.deep_link) || "";
+}
+
 function renderPay(payment) {
-  payInfo.innerHTML = `<h3>پرداخت کارت‌به‌کارت</h3><div id="bank-card-mount"></div>`;
-  renderBankCard(document.getElementById("bank-card-mount"), payment || {});
+  paymentState = payment || {};
+  const parts = [];
+  if (paymentState.bale_wallet_ready) {
+    parts.push(`<div class="pay-method">
+      <h3>پرداخت با کیف‌پول بله</h3>
+      <p class="meta">فاکتور باز را انتخاب کنید و دکمه «پرداخت با بله» را بزنید؛ درخواست پول در چت بله برایتان می‌آید و بعد از پرداخت، اشتراک خودکار فعال می‌شود.</p>
+      ${
+        baleLinked()
+          ? `<p class="hint ok-hint">حساب بله وصل است.</p>`
+          : `<p class="hint">ابتدا بله را در <a href="/app">پنل</a> وصل کنید${
+              baleDeepLink() ? ` یا <a href="${baleDeepLink()}" target="_blank" rel="noreferrer">همین‌جا باز کنید</a>` : ""
+            }.</p>`
+      }
+    </div>`);
+  }
+  if (paymentState.configured) {
+    parts.push(`<div class="pay-method">
+      <h3>پرداخت کارت‌به‌کارت</h3>
+      <div id="bank-card-mount"></div>
+    </div>`);
+  }
+  if (!parts.length) {
+    payInfo.innerHTML = `<p class="empty">روش پرداختی تنظیم نشده است.</p>`;
+    return;
+  }
+  payInfo.innerHTML = parts.join("");
+  const mount = document.getElementById("bank-card-mount");
+  if (mount) renderBankCard(mount, paymentState);
 }
 
 function receiptDropHtml(inv) {
   const inputId = `receipt-${inv.id}`;
+  const baleBtn =
+    paymentState.bale_wallet_ready && inv.status === "pending"
+      ? `<button class="primary small" type="button" data-bale="${inv.id}">پرداخت با بله</button>`
+      : "";
   return `<div class="receipt-upload">
+    ${baleBtn ? `<div class="row pay-bale-row">${baleBtn}<span class="meta">یا کارت‌به‌کارت:</span></div>` : ""}
     <p class="pay-steps">۱) مبلغ را به کارت بالا واریز کنید و شناسه واریز را در توضیحات بنویسید &nbsp;·&nbsp; ۲) تصویر رسید را بارگذاری کنید</p>
     <label class="receipt-drop" data-drop for="${inputId}">
       <input id="${inputId}" type="file" data-file accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf">
@@ -52,9 +95,32 @@ function receiptDropHtml(inv) {
       <img class="receipt-preview-img" data-drop-preview alt="" hidden>
     </label>
     <input data-note placeholder="توضیح اختیاری" value="${inv.payer_note || ""}">
-    <button class="primary small" type="button" data-paid="${inv.id}">ثبت رسید و ارسال برای بررسی</button>
+    <button class="ghost small" type="button" data-paid="${inv.id}">ثبت رسید و ارسال برای بررسی</button>
     <p class="hint">فیش را اینجا آپلود کنید؛ نیازی به ارسال در تلگرام نیست.</p>
   </div>`;
+}
+
+function methodLabel(inv) {
+  if (inv.payment_method === "bale_wallet") return " · کیف‌پول بله";
+  if (inv.payment_method === "card") return " · کارت‌به‌کارت";
+  return "";
+}
+
+function showBalePayNotice(card, openUrl) {
+  if (!card) return;
+  let box = card.querySelector("[data-bale-notice]");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "bale-pay-notice";
+    box.dataset.baleNotice = "1";
+    const mount = card.querySelector(".receipt-upload") || card;
+    mount.prepend(box);
+  }
+  box.innerHTML = `
+    <strong>الان به بله بروید</strong>
+    <p>درخواست پول داخل چت بازوی ما ارسال شد. همان پیام را باز کنید و پرداخت را تکمیل کنید؛ اشتراک خودکار فعال می‌شود.</p>
+    <a class="primary small" href="${openUrl}" target="_blank" rel="noreferrer">باز کردن بله</a>
+  `;
 }
 
 function renderInvoices(invoices) {
@@ -76,7 +142,7 @@ function renderInvoices(invoices) {
         <span class="pay-amount-label">${inv.plan_name}</span>
         <strong class="pay-amount-value">${inv.amount_label}</strong>
         <div class="pay-amount-meta">
-          <span>شناسه واریز: <b dir="ltr">${inv.ref_code}</b></span>
+          <span>شناسه واریز: <b dir="ltr">${inv.ref_code}</b>${methodLabel(inv)}</span>
           <span class="pill ${inv.status === "paid" ? "ok" : inv.status === "rejected" ? "warn" : ""}">${STATUS[inv.status] || inv.status}</span>
         </div>
       </div>
@@ -89,6 +155,33 @@ function renderInvoices(invoices) {
       bindReceiptDrop(drop);
     }
   }
+  list.querySelectorAll("[data-bale]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!baleLinked()) {
+        const link = baleDeepLink();
+        toast(link ? "اول بله را وصل کنید" : "حساب بله وصل نیست", "err");
+        if (link) window.open(link, "_blank", "noopener");
+        return;
+      }
+      btn.disabled = true;
+      const wrap = btn.closest(".invoice-card");
+      try {
+        const data = await api(`/api/invoices/${btn.dataset.bale}/pay-bale`, {
+          method: "POST",
+          body: {},
+        });
+        const openUrl = data?.bale?.open_url || baleDeepLink() || "https://ble.ir/";
+        showBalePayNotice(wrap, openUrl);
+        toast("فاکتور به بله ارسال شد — الان همان‌جا پرداخت کنید.", "ok");
+        window.open(openUrl, "_blank", "noopener");
+        btn.disabled = false;
+        btn.textContent = "ارسال مجدد به بله";
+      } catch (err) {
+        toast(err.message, "err");
+        btn.disabled = false;
+      }
+    });
+  });
   list.querySelectorAll("[data-paid]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.paid;
@@ -123,7 +216,12 @@ function renderInvoices(invoices) {
 
 async function boot() {
   try {
-    const [inv, pay] = await Promise.all([api("/api/invoices"), api("/api/payment-info")]);
+    const [inv, pay, messengers] = await Promise.all([
+      api("/api/invoices"),
+      api("/api/payment-info"),
+      api("/api/messengers").catch(() => ({ messengers: [] })),
+    ]);
+    messengersState = messengers.messengers || [];
     renderPay(pay.payment);
     renderInvoices(inv.invoices || []);
     const hash = location.hash.replace("#", "");
