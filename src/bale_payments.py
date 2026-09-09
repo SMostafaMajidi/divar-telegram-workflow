@@ -85,11 +85,16 @@ def send_wallet_invoice(user: dict[str, Any], invoice: dict[str, Any]) -> dict[s
         prices=[{"label": title, "amount": amount_rial}],
     )
     db.mark_invoice_bale_sent(str(invoice["id"]), user["id"])
+    username = client.bot_username() or ""
+    # Plain bot URL opens the existing chat (where the invoice just arrived).
+    open_url = f"https://ble.ir/{username}" if username else client.bot_deep_link("link")
     return {
         "ok": True,
         "chat_id": chat_id,
         "amount_rial": amount_rial,
         "message_id": (result.get("result") or {}).get("message_id"),
+        "bot_username": username,
+        "open_url": open_url,
         "billing_url": f"{public_base_url()}/app/billing#{invoice['id']}",
     }
 

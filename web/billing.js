@@ -106,6 +106,23 @@ function methodLabel(inv) {
   return "";
 }
 
+function showBalePayNotice(card, openUrl) {
+  if (!card) return;
+  let box = card.querySelector("[data-bale-notice]");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "bale-pay-notice";
+    box.dataset.baleNotice = "1";
+    const mount = card.querySelector(".receipt-upload") || card;
+    mount.prepend(box);
+  }
+  box.innerHTML = `
+    <strong>الان به بله بروید</strong>
+    <p>درخواست پول داخل چت بازوی ما ارسال شد. همان پیام را باز کنید و پرداخت را تکمیل کنید؛ اشتراک خودکار فعال می‌شود.</p>
+    <a class="primary small" href="${openUrl}" target="_blank" rel="noreferrer">باز کردن بله</a>
+  `;
+}
+
 function renderInvoices(invoices) {
   list.replaceChildren();
   if (!invoices.length) {
@@ -147,9 +164,18 @@ function renderInvoices(invoices) {
         return;
       }
       btn.disabled = true;
+      const wrap = btn.closest(".invoice-card");
       try {
-        await api(`/api/invoices/${btn.dataset.bale}/pay-bale`, { method: "POST", body: {} });
-        toast("درخواست پول در بله ارسال شد؛ همان‌جا پرداخت کنید.", "ok");
+        const data = await api(`/api/invoices/${btn.dataset.bale}/pay-bale`, {
+          method: "POST",
+          body: {},
+        });
+        const openUrl = data?.bale?.open_url || baleDeepLink() || "https://ble.ir/";
+        showBalePayNotice(wrap, openUrl);
+        toast("فاکتور به بله ارسال شد — الان همان‌جا پرداخت کنید.", "ok");
+        window.open(openUrl, "_blank", "noopener");
+        btn.disabled = false;
+        btn.textContent = "ارسال مجدد به بله";
       } catch (err) {
         toast(err.message, "err");
         btn.disabled = false;
