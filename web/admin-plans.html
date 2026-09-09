@@ -85,6 +85,15 @@
         <label class="check"><input name="api_access" type="checkbox"> دسترسی API</label>
         <label class="check"><input name="active" type="checkbox" checked> فعال در صفحه قیمت</label>
       </div>
+      <p class="hint" style="margin-top:12px">پیام‌رسان و پرداخت — طبق پلن</p>
+      <div class="toggle-row">
+        <label class="check"><input name="allow_bale" type="checkbox" checked> بله</label>
+        <label class="check"><input name="allow_eitaa" type="checkbox"> ایتا</label>
+        <label class="check"><input name="allow_bale_wallet" type="checkbox"> کیف‌پول بله</label>
+      </div>
+      <label>سقف تعداد مقصد ارسال (۰ = نامحدود)
+        <input name="max_destinations" type="number" min="0" max="50" value="0">
+      </label>
       <label>قابلیت‌ها (هر خط یک مورد)
         <textarea name="features" rows="5" placeholder="۳ فیلتر فعال"></textarea>
       </label>
@@ -97,6 +106,6 @@
 
   <script src="/dates.js?v=2"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin-plans.js?v=2"></script>
+  <script src="/admin-plans.js?v=3"></script>
 </body>
 </html>

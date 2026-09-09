@@ -41,6 +41,7 @@
       <nav class="seg-tabs" id="user-tabs" aria-label="بخش‌های مشتری">
         <button type="button" class="seg-tab active" data-tab="account">حساب</button>
         <button type="button" class="seg-tab" data-tab="plan">اشتراک</button>
+        <button type="button" class="seg-tab" data-tab="platforms">پلتفرم‌ها</button>
         <button type="button" class="seg-tab" data-tab="poll">پایش</button>
         <button type="button" class="seg-tab" data-tab="routes">فیلترها</button>
         <button type="button" class="seg-tab" data-tab="payments">پرداخت‌ها</button>
@@ -96,6 +97,40 @@
         </div>
         <button class="primary small" type="submit">ذخیره اشتراک</button>
       </form>
+
+      <div id="platforms-panel" class="tab-panel settings-clean" data-panel="platforms" hidden>
+        <div class="panel-head tight">
+          <div>
+            <p class="panel-lead" style="margin:0">پلتفرم‌های فعال این مشتری</p>
+            <p class="meta" style="margin:4px 0 0">طبق پلن چه چیزی مجاز است و الان به کدام‌ها وصل است.</p>
+          </div>
+        </div>
+        <div id="platforms-caps" class="dest-list"></div>
+        <div class="panel-head tight" style="margin-top:16px">
+          <div>
+            <p class="panel-lead" style="margin:0">اتصال‌های فعلی</p>
+          </div>
+        </div>
+        <div id="platforms-links" class="dest-list"></div>
+        <div class="tool-block eitaa-setup" style="margin-top:16px">
+          <h3 style="margin:0;font-size:15px">ایتا (توکن مشتری)</h3>
+          <p id="admin-eitaa-status" class="meta"></p>
+          <div class="eitaa-token-row">
+            <label class="grow">توکن ایتایار
+              <input id="admin-eitaa-token" type="password" dir="ltr" autocomplete="off" placeholder="توکن مشتری">
+            </label>
+            <button type="button" class="primary small" id="admin-eitaa-save">ذخیره</button>
+            <button type="button" class="ghost small" id="admin-eitaa-clear">حذف</button>
+          </div>
+          <div class="eitaa-channel-row">
+            <label class="grow">شناسه کانال
+              <input id="admin-eitaa-channel" type="text" dir="ltr" placeholder="بدون @">
+            </label>
+            <button type="button" class="ghost small" id="admin-eitaa-channel-add">افزودن کانال</button>
+          </div>
+          <div id="admin-eitaa-channels" class="dest-list"></div>
+        </div>
+      </div>
 
       <form id="poll-form" class="tab-panel settings-clean" data-panel="poll" hidden>
         <p class="panel-lead">زمان‌بندی پایش این مشتری</p>
@@ -178,24 +213,6 @@
 
       <div id="more-panel" class="tab-panel settings-clean" data-panel="more" hidden>
         <p class="panel-lead">ابزارها و حذف</p>
-        <div class="tool-block eitaa-setup" id="admin-eitaa-box">
-          <h3 style="margin:0;font-size:15px">ایتا (توکن مشتری)</h3>
-          <p id="admin-eitaa-status" class="meta"></p>
-          <div class="eitaa-token-row">
-            <label class="grow">توکن ایتایار
-              <input id="admin-eitaa-token" type="password" dir="ltr" autocomplete="off" placeholder="توکن مشتری">
-            </label>
-            <button type="button" class="primary small" id="admin-eitaa-save">ذخیره</button>
-            <button type="button" class="ghost small" id="admin-eitaa-clear">حذف</button>
-          </div>
-          <div class="eitaa-channel-row">
-            <label class="grow">شناسه کانال
-              <input id="admin-eitaa-channel" type="text" dir="ltr" placeholder="بدون @">
-            </label>
-            <button type="button" class="ghost small" id="admin-eitaa-channel-add">افزودن کانال</button>
-          </div>
-          <div id="admin-eitaa-channels" class="dest-list"></div>
-        </div>
         <div class="tool-block">
           <div class="row">
             <button id="rotate-btn" class="ghost small" type="button">کلید API جدید</button>
@@ -213,6 +230,6 @@
 
   <script src="/dates.js?v=2"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin-user.js?v=15"></script>
+  <script src="/admin-user.js?v=16"></script>
 </body>
 </html>

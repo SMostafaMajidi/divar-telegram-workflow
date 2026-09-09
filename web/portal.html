@@ -23,6 +23,7 @@
         </button>
         <div class="menu-dropdown" hidden role="menu">
           <button id="run-btn" class="menu-item" type="button" role="menuitem" hidden>ارسال بهترین‌ها</button>
+          <a class="menu-item" href="/app/chats" role="menuitem">پیام‌رسان‌ها و چت‌ها</a>
           <a class="menu-item" href="/pricing" role="menuitem">پلن‌ها</a>
           <a class="menu-item" href="/app/billing" role="menuitem">صورتحساب</a>
           <a class="menu-item" href="/support" role="menuitem">پشتیبانی</a>
@@ -39,43 +40,18 @@
       <div id="toast" class="toast" hidden></div>
 
       <ol class="portal-guide">
-        <li><b>پیام‌رسان را وصل کن</b> — تلگرام/بله را استارت کنید؛ برای ایتا توکن ایتایار و کانال را پایین بگذارید.</li>
+        <li><b>پیام‌رسان‌ها</b> — از <a href="/app/chats">صفحه چت‌ها</a> ربات/کانال را وصل کنید.</li>
         <li><b>فیلتر بساز</b> — دسته، شهر و شرایط آگهی را مشخص کن.</li>
         <li><b>مقصدها را انتخاب کن</b> — یک فیلتر می‌تواند به چند چت در چند پیام‌رسان برود.</li>
       </ol>
 
-      <div class="panel-head tight" style="margin-top:8px">
+      <div class="chats-cta">
         <div>
-          <h2 style="margin:0;font-size:16px">پیام‌رسان‌ها</h2>
-          <p class="meta" style="margin:4px 0 0">ربات‌های فعال را وصل کنید تا چت‌ها قابل انتخاب شوند.</p>
+          <strong>پیام‌رسان‌ها و چت‌ها</strong>
+          <p class="meta" style="margin:4px 0 0">اتصال تلگرام، بله و ایتا را جداگانه مدیریت کنید تا این صفحه خلوت بماند.</p>
         </div>
+        <a class="primary small" href="/app/chats">مدیریت چت‌ها</a>
       </div>
-      <div id="messenger-list" class="messenger-grid"></div>
-
-      <section id="eitaa-setup" class="eitaa-setup">
-        <div class="panel-head tight">
-          <div>
-            <h2 style="margin:0;font-size:16px">ایتا (ارسال به کانال)</h2>
-            <p class="meta" style="margin:4px 0 0">توکن ایتایار مال خودتان است؛ بعد کانال را اضافه کنید تا در فیلتر دیده شود.</p>
-          </div>
-        </div>
-        <ol id="eitaa-instructions" class="eitaa-steps"></ol>
-        <div class="eitaa-token-row">
-          <label class="grow">توکن ایتایار
-            <input id="eitaa-token" type="password" dir="ltr" autocomplete="off" placeholder="از eitaayar.ir کپی کنید">
-          </label>
-          <button type="button" class="primary small" id="eitaa-token-save">ذخیره توکن</button>
-          <button type="button" class="ghost small" id="eitaa-token-clear" hidden>حذف توکن</button>
-        </div>
-        <p id="eitaa-token-status" class="meta"></p>
-        <div class="eitaa-channel-row">
-          <label class="grow">شناسه کانال ایتا
-            <input id="eitaa-channel-id" type="text" dir="ltr" placeholder="بدون @ مثل mychannel یا عدد کانال">
-          </label>
-          <button type="button" class="ghost small" id="eitaa-channel-add">افزودن کانال</button>
-        </div>
-        <div id="eitaa-channel-list" class="dest-list"></div>
-      </section>
 
       <div class="panel-head">
         <div>
@@ -205,6 +181,6 @@
   </dialog>
 
   <script src="/dates.js?v=1"></script>
-  <script src="/portal.js?v=14"></script>
+  <script src="/portal.js?v=15"></script>
 </body>
 </html>

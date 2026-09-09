@@ -67,15 +67,6 @@ const els = {
   apiDocsMenu: $("#api-docs-menu"),
   apiDocsFoot: $("#api-docs-foot"),
   apiDocsSep: $("#api-docs-sep"),
-  messengerList: $("#messenger-list"),
-  eitaaInstructions: $("#eitaa-instructions"),
-  eitaaToken: $("#eitaa-token"),
-  eitaaTokenSave: $("#eitaa-token-save"),
-  eitaaTokenClear: $("#eitaa-token-clear"),
-  eitaaTokenStatus: $("#eitaa-token-status"),
-  eitaaChannelId: $("#eitaa-channel-id"),
-  eitaaChannelAdd: $("#eitaa-channel-add"),
-  eitaaChannelList: $("#eitaa-channel-list"),
   destList: $("#dest-list"),
   destChannel: $("#dest-channel"),
   destChat: $("#dest-chat"),
@@ -180,15 +171,17 @@ function formatDestinations(filter) {
 function fillChannelSelect(select, selected) {
   if (!select) return;
   select.replaceChildren();
-  const channels = state.messengers.length
-    ? state.messengers.map((m) => m.channel)
-    : ["telegram"];
-  for (const ch of channels) {
+  const channels = (state.messengers.length
+    ? state.messengers.filter((m) => m.enabled !== false).map((m) => m.channel)
+    : ["telegram"]
+  ).filter((ch) => ch !== "eitaa" || state.user?.capabilities?.allow_eitaa !== false);
+  const unique = [...new Set(channels.length ? channels : ["telegram"])];
+  for (const ch of unique) {
     const label = CHANNEL_LABELS[ch] || ch;
     select.append(el("option", { value: ch, text: label }));
   }
-  if (selected && channels.includes(selected)) select.value = selected;
-  else if (channels.length) select.value = channels[0];
+  if (selected && unique.includes(selected)) select.value = selected;
+  else if (unique.length) select.value = unique[0];
 }
 
 function syncDestInputs() {
@@ -206,9 +199,9 @@ function syncDestInputs() {
       els.destHint.textContent =
         "اول پیام‌رسان، بعد چت. می‌توانید چند مقصد از چند پیام‌رسان اضافه کنید.";
     } else if (!state.user?.eitaa_configured && !(state.eitaa && state.eitaa.configured)) {
-      els.destHint.textContent = "اول در بخش ایتا توکن را ذخیره کنید، بعد کانال اضافه کنید.";
+      els.destHint.textContent = "اول در صفحه چت‌ها توکن ایتا را ذخیره کنید، بعد کانال اضافه کنید.";
     } else if (!eitaaChats.length) {
-      els.destHint.textContent = "شناسه کانال را وارد کنید یا از بخش ایتا کانال اضافه کنید.";
+      els.destHint.textContent = "شناسه کانال را وارد کنید یا از صفحه چت‌ها کانال اضافه کنید.";
     } else {
       els.destHint.textContent = "یکی از کانال‌های ایتای ذخیره‌شده را انتخاب کنید.";
     }
@@ -223,7 +216,7 @@ function fillDestChatSelect(select, channel, selected) {
     select.replaceChildren(
       el("option", {
         value: "",
-        text: matched.length ? "انتخاب کانال ایتا" : "اول کانال ایتا را در بخش بالا اضافه کنید",
+        text: matched.length ? "انتخاب کانال ایتا" : "اول کانال ایتا را در صفحه چت‌ها اضافه کنید",
       }),
     );
     for (const chat of matched) {
@@ -262,17 +255,14 @@ function fillDestChatSelect(select, channel, selected) {
 }
 
 async function refreshMessengerState() {
-  const [chats, messengers, me, eitaa] = await Promise.all([
+  const [chats, messengers, me] = await Promise.all([
     api("/api/chats"),
     api("/api/messengers"),
     api("/api/me"),
-    api("/api/eitaa").catch(() => null),
   ]);
   state.chats = chats.chats || [];
   state.messengers = messengers.messengers || me.messengers || [];
   if (me.user) state.user = me.user;
-  if (eitaa) renderEitaaSetup(eitaa);
-  renderMessengers();
 }
 
 function renderDestList() {
@@ -1400,13 +1390,12 @@ els.ticketForm?.addEventListener("submit", async (event) => {
 
 async function boot() {
   try {
-    const [me, filters, categories, chats, messengers, eitaa] = await Promise.all([
+    const [me, filters, categories, chats, messengers] = await Promise.all([
       api("/api/me"),
       api("/api/filters"),
       api("/api/categories"),
       api("/api/chats"),
       api("/api/messengers"),
-      api("/api/eitaa"),
     ]);
     state.user = me.user;
     state.filters = filters.filters || [];
@@ -1415,8 +1404,6 @@ async function boot() {
     state.categoryTree = categories.tree || [];
     state.categoryFlat = categories.flat || [];
     renderStatus();
-    renderMessengers();
-    renderEitaaSetup(eitaa);
     renderFilters();
     await Promise.all([loadFeed(), loadTickets()]);
   } catch (err) {

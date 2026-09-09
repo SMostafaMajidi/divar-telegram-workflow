@@ -13,6 +13,7 @@ const STATUS = {
 
 let paymentState = {};
 let messengersState = [];
+let userCaps = {};
 
 function toast(msg, kind = "") {
   toastEl.hidden = !msg;
@@ -45,17 +46,24 @@ function baleDeepLink() {
   return (m && m.deep_link) || "";
 }
 
+function baleWalletAllowed() {
+  if (userCaps.allow_bale_wallet === false) return false;
+  const flag = (messengersState || []).find((m) => m.allow_bale_wallet != null);
+  if (flag && flag.allow_bale_wallet === false) return false;
+  return true;
+}
+
 function renderPay(payment) {
   paymentState = payment || {};
   const parts = [];
-  if (paymentState.bale_wallet_ready) {
+  if (paymentState.bale_wallet_ready && baleWalletAllowed()) {
     parts.push(`<div class="pay-method">
       <h3>پرداخت با کیف‌پول بله</h3>
       <p class="meta">فاکتور باز را انتخاب کنید و دکمه «پرداخت با بله» را بزنید؛ درخواست پول در چت بله برایتان می‌آید و بعد از پرداخت، اشتراک خودکار فعال می‌شود.</p>
       ${
         baleLinked()
           ? `<p class="hint ok-hint">حساب بله وصل است.</p>`
-          : `<p class="hint">ابتدا بله را در <a href="/app">پنل</a> وصل کنید${
+          : `<p class="hint">ابتدا بله را در <a href="/app/chats">صفحه چت‌ها</a> وصل کنید${
               baleDeepLink() ? ` یا <a href="${baleDeepLink()}" target="_blank" rel="noreferrer">همین‌جا باز کنید</a>` : ""
             }.</p>`
       }
@@ -79,7 +87,7 @@ function renderPay(payment) {
 function receiptDropHtml(inv) {
   const inputId = `receipt-${inv.id}`;
   const baleBtn =
-    paymentState.bale_wallet_ready && inv.status === "pending"
+    paymentState.bale_wallet_ready && baleWalletAllowed() && inv.status === "pending"
       ? `<button class="primary small" type="button" data-bale="${inv.id}">پرداخت با بله</button>`
       : "";
   return `<div class="receipt-upload">
@@ -216,12 +224,14 @@ function renderInvoices(invoices) {
 
 async function boot() {
   try {
-    const [inv, pay, messengers] = await Promise.all([
+    const [inv, pay, messengers, me] = await Promise.all([
       api("/api/invoices"),
       api("/api/payment-info"),
       api("/api/messengers").catch(() => ({ messengers: [] })),
+      api("/api/me").catch(() => ({})),
     ]);
     messengersState = messengers.messengers || [];
+    userCaps = me.user?.capabilities || {};
     renderPay(pay.payment);
     renderInvoices(inv.invoices || []);
     const hash = location.hash.replace("#", "");

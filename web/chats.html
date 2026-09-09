@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>پیام‌رسان‌ها و چت‌ها — دیوار واچر</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=dark14">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">پنل مشتری</p>
+      <h1>پیام‌رسان‌ها و چت‌ها</h1>
+      <p class="meta topbar-meta">اتصال ربات‌ها و کانال‌ها برای مقصد فیلترها</p>
+    </div>
+    <div class="top-actions">
+      <a class="ghost small" href="/app">بازگشت به پنل</a>
+    </div>
+  </header>
+
+  <main class="layout single">
+    <section class="panel narrow-panel">
+      <p id="toast" class="toast" hidden></p>
+
+      <ol class="portal-guide">
+        <li><b>تلگرام / بله</b> — ربات را استارت یا لاگین کنید تا چت‌ها در فیلتر دیده شوند.</li>
+        <li><b>ایتا</b> — توکن ایتایار خودتان را بگذارید و کانال را اضافه کنید (اگر پلن اجازه دهد).</li>
+        <li><b>بعد در فیلتر</b> — مقصد ارسال را از پیام‌رسان‌های وصل‌شده انتخاب کنید.</li>
+      </ol>
+
+      <div class="panel-head tight" style="margin-top:8px">
+        <div>
+          <h2 style="margin:0;font-size:16px">ربات‌ها</h2>
+          <p class="meta" style="margin:4px 0 0">طبق پلن شما ممکن است بعضی پیام‌رسان‌ها غیرفعال باشند.</p>
+        </div>
+      </div>
+      <div id="messenger-list" class="messenger-grid"></div>
+
+      <section id="eitaa-setup" class="eitaa-setup" hidden>
+        <div class="panel-head tight">
+          <div>
+            <h2 style="margin:0;font-size:16px">ایتا (ارسال به کانال)</h2>
+            <p class="meta" style="margin:4px 0 0">توکن ایتایار مال خودتان است؛ بعد شناسه کانال را اضافه کنید.</p>
+          </div>
+        </div>
+        <ol id="eitaa-instructions" class="eitaa-steps"></ol>
+        <div class="eitaa-token-row">
+          <label class="grow">توکن ایتایار
+            <input id="eitaa-token" type="password" dir="ltr" autocomplete="off" placeholder="از eitaayar.ir کپی کنید">
+          </label>
+          <button type="button" class="primary small" id="eitaa-token-save">ذخیره توکن</button>
+          <button type="button" class="ghost small" id="eitaa-token-clear" hidden>حذف توکن</button>
+        </div>
+        <p id="eitaa-token-status" class="meta"></p>
+        <div class="eitaa-channel-row">
+          <label class="grow">شناسه کانال ایتا
+            <input id="eitaa-channel-id" type="text" dir="ltr" placeholder="بدون @ یا شناسه عددی پنل ایتایار">
+          </label>
+          <button type="button" class="ghost small" id="eitaa-channel-add">افزودن کانال</button>
+        </div>
+        <div id="eitaa-channel-list" class="dest-list"></div>
+      </section>
+
+      <p id="eitaa-locked" class="meta" hidden>پلن فعلی شما ایتا ندارد. از صفحه پلن‌ها ارتقا دهید.</p>
+
+      <div class="panel-head" style="margin-top:18px">
+        <div>
+          <h2 style="margin:0;font-size:16px">چت‌های کشف‌شده</h2>
+          <p class="meta" style="margin:4px 0 0">برای انتخاب در مقصد فیلتر استفاده می‌شوند.</p>
+        </div>
+      </div>
+      <div id="chat-list" class="dest-list"></div>
+    </section>
+  </main>
+
+  <script src="/dates.js?v=1"></script>
+  <script src="/chats.js?v=1"></script>
+</body>
+</html>

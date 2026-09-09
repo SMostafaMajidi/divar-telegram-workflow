@@ -26,8 +26,12 @@ DEFAULT_PLANS: dict[str, dict[str, Any]] = {
         "poll_interval_minutes": 5,
         "ai_enabled": False,
         "duration_days": 7,
-        "features": ["۱ فیلتر فعال", "حداکثر ۱ معیار اضافه (مثل قیمت)", "پایش هر ۵ دقیقه"],
+        "features": ["۱ فیلتر فعال", "تلگرام + بله", "حداکثر ۱ مقصد ارسال"],
         "api_access": False,
+        "allow_bale": True,
+        "allow_eitaa": False,
+        "allow_bale_wallet": False,
+        "max_destinations": 1,
         "sort_order": 10,
         "active": True,
     },
@@ -41,15 +45,19 @@ DEFAULT_PLANS: dict[str, dict[str, Any]] = {
         "poll_interval_minutes": 5,
         "ai_enabled": False,
         "duration_days": 30,
-        "features": ["۳ فیلتر فعال", "تا ۳ معیار روی هر فیلتر", "مقصد چت جدا"],
+        "features": ["۳ فیلتر فعال", "تلگرام + بله", "تا ۳ مقصد", "پرداخت با بله"],
         "api_access": False,
+        "allow_bale": True,
+        "allow_eitaa": False,
+        "allow_bale_wallet": True,
+        "max_destinations": 3,
         "sort_order": 20,
         "active": True,
     },
     "pro": {
         "id": "pro",
         "name": "حرفه‌ای",
-        "tagline": "فیلتر بیشتر + رتبه‌بندی هوشمند + API",
+        "tagline": "فیلتر بیشتر + رتبه‌بندی هوشمند + ایتا + API",
         "price_toman": 990_000,
         "max_filters": 10,
         "max_criteria": None,
@@ -58,12 +66,17 @@ DEFAULT_PLANS: dict[str, dict[str, Any]] = {
         "duration_days": 30,
         "features": [
             "۱۰ فیلتر فعال",
-            "معیار نامحدود روی هر فیلتر",
+            "تلگرام + بله + ایتا",
+            "مقصد نامحدود",
             "رتبه‌بندی هوشمند",
+            "پرداخت با بله",
             "دسترسی API",
-            "اولویت پشتیبانی",
         ],
         "api_access": True,
+        "allow_bale": True,
+        "allow_eitaa": True,
+        "allow_bale_wallet": True,
+        "max_destinations": 0,
         "sort_order": 30,
         "active": True,
     },
@@ -80,7 +93,69 @@ def _with_price(plan: dict[str, Any]) -> dict[str, Any]:
     else:
         out["max_criteria"] = int(raw)
         out["max_criteria_label"] = str(int(raw))
+    caps = plan_capabilities(out)
+    out.update(caps)
     return out
+
+
+def plan_capabilities(plan: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize messenger/payment caps for a plan row."""
+    plan = plan or {}
+    plan_id = str(plan.get("id") or "trial")
+    defaults = DEFAULT_PLANS.get(plan_id) or DEFAULT_PLANS["trial"]
+
+    def flag(key: str, default: bool) -> bool:
+        if key in plan and plan.get(key) is not None:
+            return bool(plan.get(key))
+        return bool(defaults.get(key, default))
+
+    max_dest = plan.get("max_destinations")
+    if max_dest is None:
+        max_dest = defaults.get("max_destinations", 0)
+    try:
+        max_dest_i = int(max_dest)
+    except (TypeError, ValueError):
+        max_dest_i = 0
+    return {
+        "allow_telegram": True,
+        "allow_bale": flag("allow_bale", True),
+        "allow_eitaa": flag("allow_eitaa", False),
+        "allow_bale_wallet": flag("allow_bale_wallet", False),
+        "max_destinations": max(0, max_dest_i),  # 0 = unlimited
+    }
+
+
+def user_capabilities(user: dict[str, Any] | None) -> dict[str, Any]:
+    plan = get_plan((user or {}).get("plan_id"))
+    return plan_capabilities(plan)
+
+
+def channel_allowed(user: dict[str, Any] | None, channel: str) -> bool:
+    caps = user_capabilities(user)
+    ch = str(channel or "").strip().lower()
+    if ch == "telegram":
+        return bool(caps.get("allow_telegram", True))
+    if ch == "bale":
+        return bool(caps.get("allow_bale"))
+    if ch == "eitaa":
+        return bool(caps.get("allow_eitaa"))
+    return False
+
+
+def assert_destinations_allowed(user: dict[str, Any] | None, destinations: list[dict[str, Any]]) -> None:
+    """Raise if destinations violate plan channel/count caps."""
+    from config_store import AppError
+
+    caps = user_capabilities(user)
+    max_dest = int(caps.get("max_destinations") or 0)
+    enabled = [d for d in (destinations or []) if d.get("enabled", True)]
+    if max_dest > 0 and len(enabled) > max_dest:
+        raise AppError(f"سقف مقصد این پلن {max_dest} است (الان {len(enabled)}).")
+    for item in enabled:
+        ch = str(item.get("channel") or "telegram").strip().lower() or "telegram"
+        if not channel_allowed(user, ch):
+            labels = {"telegram": "تلگرام", "bale": "بله", "eitaa": "ایتا"}
+            raise AppError(f"پلن فعلی شما «{labels.get(ch, ch)}» ندارد.")
 
 
 def _defaults_list(*, include_inactive: bool = False) -> list[dict[str, Any]]:

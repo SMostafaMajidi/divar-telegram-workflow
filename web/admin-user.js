@@ -57,6 +57,8 @@ const els = {
   eitaaChannel: $("#admin-eitaa-channel"),
   eitaaChannelAdd: $("#admin-eitaa-channel-add"),
   eitaaChannels: $("#admin-eitaa-channels"),
+  platformsCaps: $("#platforms-caps"),
+  platformsLinks: $("#platforms-links"),
 };
 
 function chatLabel(chat) {
@@ -458,11 +460,79 @@ function render() {
   els.slotHint.textContent = slotHint(user);
   els.feed.href = `/u/${user.public_slug || user.login_username || user.telegram_username}`;
   els.apiKey.textContent = user.api_key ? `API key: ${user.api_key}` : "کلید API هنوز ساخته نشده.";
+  renderPlatforms(user);
   renderEitaaAdmin(user.eitaa || {});
   renderRoutes();
   renderPayments();
   renderWatchLog();
   renderTickets();
+}
+
+function renderPlatforms(user) {
+  const caps = user.capabilities || {};
+  const maxDest = Number(caps.max_destinations || 0);
+  const rows = [
+    ["تلگرام", true, !!user.linked || !!(user.telegram_chat_id)],
+    ["بله", !!caps.allow_bale, (user.messenger_accounts || []).some((a) => a.channel === "bale")],
+    ["ایتا", !!caps.allow_eitaa, !!user.eitaa_configured || !!(user.eitaa && user.eitaa.configured)],
+    ["کیف‌پول بله", !!caps.allow_bale_wallet, null],
+    ["سقف مقصد", true, maxDest > 0 ? `${maxDest}` : "نامحدود"],
+  ];
+  if (els.platformsCaps) {
+    els.platformsCaps.replaceChildren();
+    for (const [label, allowed, linked] of rows) {
+      const chip = document.createElement("div");
+      chip.className = "dest-chip";
+      const status =
+        linked === null
+          ? allowed
+            ? "مجاز در پلن"
+            : "در پلن نیست"
+          : typeof linked === "string"
+            ? linked
+            : allowed
+              ? linked
+                ? "مجاز · متصل"
+                : "مجاز · هنوز وصل نشده"
+              : "در پلن نیست";
+      chip.innerHTML = `<span><b>${label}</b> · ${status}</span>`;
+      if (!allowed && linked !== null && typeof linked !== "string") chip.classList.add("off");
+      els.platformsCaps.append(chip);
+    }
+  }
+  if (els.platformsLinks) {
+    els.platformsLinks.replaceChildren();
+    const accounts = user.messenger_accounts || [];
+    if (!accounts.length && !user.telegram_chat_id && !(user.eitaa && (user.eitaa.channels || []).length)) {
+      els.platformsLinks.append(
+        Object.assign(document.createElement("p"), {
+          className: "meta",
+          textContent: "هنوز اتصال فعالی ثبت نشده.",
+        }),
+      );
+    } else {
+      for (const a of accounts) {
+        const chip = document.createElement("div");
+        chip.className = "dest-chip";
+        chip.innerHTML = `<span>${CHANNEL_LABELS[a.channel] || a.channel} · <span dir="ltr">${a.account_id || "—"}</span>${
+          a.username ? ` · @${a.username}` : ""
+        }</span>`;
+        els.platformsLinks.append(chip);
+      }
+      if (user.telegram_chat_id && !accounts.some((a) => a.channel === "telegram")) {
+        const chip = document.createElement("div");
+        chip.className = "dest-chip";
+        chip.innerHTML = `<span>تلگرام · <span dir="ltr">${user.telegram_chat_id}</span></span>`;
+        els.platformsLinks.append(chip);
+      }
+      for (const ch of (user.eitaa && user.eitaa.channels) || []) {
+        const chip = document.createElement("div");
+        chip.className = "dest-chip";
+        chip.innerHTML = `<span>ایتا · ${chatLabel(ch)}</span>`;
+        els.platformsLinks.append(chip);
+      }
+    }
+  }
 }
 
 function renderEitaaAdmin(eitaa) {
@@ -872,7 +942,7 @@ async function boot() {
   bindLogout();
   bindJalaliPickers();
   const initial = (location.hash || "").replace("#", "") || "account";
-  setTab(["account", "plan", "poll", "routes", "payments", "watch", "tickets", "more"].includes(initial) ? initial : "account");
+  setTab(["account", "plan", "platforms", "poll", "routes", "payments", "watch", "tickets", "more"].includes(initial) ? initial : "account");
   if (!userId) {
     toast("شناسه مشتری نامعتبر است", "err");
     return;

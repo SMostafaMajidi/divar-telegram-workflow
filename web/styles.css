@@ -1398,6 +1398,20 @@ textarea {
   font-size: 13px;
 }
 
+.chats-cta {
+  margin: 12px 0 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+.chats-cta strong { display: block; font-size: 15px; }
+
 .eitaa-setup {
   margin: 14px 0 8px;
   padding: 14px;
