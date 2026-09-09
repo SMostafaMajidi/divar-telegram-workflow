@@ -21,6 +21,8 @@ const state = {
   chats: [],
   messengers: [],
   destinations: [],
+  tickets: [],
+  activeTicket: null,
   status: {},
   user: null,
   categoryTree: [],
@@ -69,6 +71,20 @@ const els = {
   destChannel: $("#dest-channel"),
   destChat: $("#dest-chat"),
   destAddBtn: $("#dest-add-btn"),
+  ticketList: $("#ticket-list"),
+  ticketAddBtn: $("#ticket-add-btn"),
+  ticketEditor: $("#ticket-editor"),
+  ticketForm: $("#ticket-form"),
+  ticketId: $("#ticket-id"),
+  ticketSubject: $("#ticket-subject"),
+  ticketBody: $("#ticket-body"),
+  ticketCompose: $("#ticket-compose"),
+  ticketThread: $("#ticket-thread"),
+  ticketReplyBox: $("#ticket-reply-box"),
+  ticketReply: $("#ticket-reply"),
+  ticketCloseBtn: $("#ticket-close-btn"),
+  ticketSubmitBtn: $("#ticket-submit-btn"),
+  ticketEditorTitle: $("#ticket-editor-title"),
 };
 
 function el(tag, attrs = {}, children = []) {
@@ -1042,6 +1058,159 @@ async function loadChats() {
   renderFilters();
 }
 
+function ticketStatusLabel(status) {
+  return status === "closed" ? "بسته" : "باز";
+}
+
+function renderTickets() {
+  if (!els.ticketList) return;
+  els.ticketList.replaceChildren();
+  if (!state.tickets.length) {
+    els.ticketList.append(
+      el("p", { class: "meta", text: "هنوز تیکتی ندارید. اگر سوال یا مشکلی بود، تیکت جدید بزنید." }),
+    );
+    return;
+  }
+  for (const ticket of state.tickets) {
+    els.ticketList.append(
+      el("button", {
+        type: "button",
+        class: `ticket-card ${ticket.status === "closed" ? "off" : ""}`,
+        onClick: () => openTicket(ticket.id),
+      }, [
+        el("div", { class: "card-top" }, [
+          el("strong", { text: ticket.subject || "بدون موضوع" }),
+          el("span", {
+            class: `pill ${ticket.status === "closed" ? "warn" : "ok"}`,
+            text: ticketStatusLabel(ticket.status),
+          }),
+        ]),
+        el("p", {
+          class: "meta",
+          text: ticket.last_body
+            ? `${ticket.last_sender === "admin" ? "پشتیبانی" : "شما"}: ${ticket.last_body}`
+            : "بدون پیام",
+        }),
+      ]),
+    );
+  }
+}
+
+async function loadTickets() {
+  const data = await api("/api/tickets");
+  state.tickets = data.tickets || [];
+  renderTickets();
+}
+
+function renderTicketThread(ticket) {
+  if (!els.ticketThread) return;
+  els.ticketThread.replaceChildren();
+  for (const msg of ticket.messages || []) {
+    const mine = msg.sender === "user";
+    els.ticketThread.append(
+      el("div", { class: `ticket-bubble ${mine ? "mine" : "theirs"}` }, [
+        el("p", { class: "meta", text: mine ? "شما" : "پشتیبانی" }),
+        el("div", { text: msg.body }),
+        el("p", {
+          class: "meta",
+          text: typeof formatJalali === "function" ? formatJalali(msg.created_at) : msg.created_at,
+        }),
+      ]),
+    );
+  }
+  els.ticketThread.scrollTop = els.ticketThread.scrollHeight;
+}
+
+function openNewTicket() {
+  state.activeTicket = null;
+  if (els.ticketId) els.ticketId.value = "";
+  if (els.ticketSubject) els.ticketSubject.value = "";
+  if (els.ticketBody) els.ticketBody.value = "";
+  if (els.ticketReply) els.ticketReply.value = "";
+  if (els.ticketCompose) els.ticketCompose.hidden = false;
+  if (els.ticketThread) els.ticketThread.hidden = true;
+  if (els.ticketReplyBox) els.ticketReplyBox.hidden = true;
+  if (els.ticketCloseBtn) els.ticketCloseBtn.hidden = true;
+  if (els.ticketEditorTitle) els.ticketEditorTitle.textContent = "تیکت جدید";
+  if (els.ticketSubmitBtn) els.ticketSubmitBtn.textContent = "ارسال تیکت";
+  els.ticketEditor?.showModal();
+}
+
+async function openTicket(ticketId) {
+  try {
+    const data = await api(`/api/tickets/${ticketId}`);
+    const ticket = data.ticket;
+    state.activeTicket = ticket;
+    if (els.ticketId) els.ticketId.value = ticket.id;
+    if (els.ticketCompose) els.ticketCompose.hidden = true;
+    if (els.ticketThread) els.ticketThread.hidden = false;
+    if (els.ticketReplyBox) els.ticketReplyBox.hidden = ticket.status === "closed";
+    if (els.ticketCloseBtn) els.ticketCloseBtn.hidden = ticket.status === "closed";
+    if (els.ticketReply) els.ticketReply.value = "";
+    if (els.ticketEditorTitle) els.ticketEditorTitle.textContent = ticket.subject || "تیکت";
+    if (els.ticketSubmitBtn) {
+      els.ticketSubmitBtn.textContent = ticket.status === "closed" ? "بستن" : "ارسال پاسخ";
+      els.ticketSubmitBtn.hidden = ticket.status === "closed";
+    }
+    renderTicketThread(ticket);
+    els.ticketEditor?.showModal();
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
+els.ticketAddBtn?.addEventListener("click", () => openNewTicket());
+$("#close-ticket-editor")?.addEventListener("click", () => els.ticketEditor?.close());
+
+els.ticketCloseBtn?.addEventListener("click", async () => {
+  const id = els.ticketId?.value;
+  if (!id) return;
+  try {
+    await api(`/api/tickets/${id}/close`, { method: "POST", body: {} });
+    toast("تیکت بسته شد", "ok");
+    els.ticketEditor?.close();
+    await loadTickets();
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+els.ticketForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    if (!state.activeTicket) {
+      const data = await api("/api/tickets", {
+        method: "POST",
+        body: {
+          subject: els.ticketSubject?.value || "",
+          body: els.ticketBody?.value || "",
+        },
+      });
+      toast("تیکت ثبت شد", "ok");
+      els.ticketEditor?.close();
+      await loadTickets();
+      if (data.ticket?.id) openTicket(data.ticket.id);
+      return;
+    }
+    const reply = (els.ticketReply?.value || "").trim();
+    if (!reply) {
+      toast("متن پاسخ را بنویسید", "err");
+      return;
+    }
+    const data = await api(`/api/tickets/${state.activeTicket.id}/messages`, {
+      method: "POST",
+      body: { body: reply },
+    });
+    state.activeTicket = data.ticket;
+    if (els.ticketReply) els.ticketReply.value = "";
+    renderTicketThread(data.ticket);
+    await loadTickets();
+    toast("پاسخ ارسال شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
 async function boot() {
   try {
     const [me, filters, categories, chats, messengers] = await Promise.all([
@@ -1060,7 +1229,7 @@ async function boot() {
     renderStatus();
     renderMessengers();
     renderFilters();
-    await loadFeed();
+    await Promise.all([loadFeed(), loadTickets()]);
   } catch (err) {
     location.replace("/");
   }

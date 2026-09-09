@@ -416,6 +416,14 @@ class Handler(BaseHTTPRequestHandler):
                 if len(parts) == 5 and parts[4] == "watch-events":
                     limit = int((query.get("limit") or ["50"])[0])
                     return self._json({"events": db.list_watch_events(user_id, limit=limit)})
+                if len(parts) == 5 and parts[4] == "tickets":
+                    status = (query.get("status") or [""])[0].strip() or None
+                    return self._json({"tickets": db.list_user_tickets(user_id, status=status)})
+                if len(parts) == 6 and parts[4] == "tickets":
+                    ticket = db.get_ticket(parts[5], user_id)
+                    if not ticket:
+                        raise AppError("تیکت پیدا نشد.")
+                    return self._json({"ticket": ticket})
                 raise AppError("Not found.")
             if path == "/api/me":
                 user = self._require_user()
@@ -432,6 +440,17 @@ class Handler(BaseHTTPRequestHandler):
                 from messengers import public_messenger_payload
 
                 return self._json({"messengers": public_messenger_payload(user)})
+            if path == "/api/tickets":
+                user = self._require_user()
+                status = (query.get("status") or [""])[0].strip() or None
+                return self._json({"tickets": db.list_user_tickets(user["id"], status=status)})
+            if path.startswith("/api/tickets/"):
+                user = self._require_user()
+                ticket_id = path.strip("/").split("/")[2]
+                ticket = db.get_ticket(ticket_id, user["id"])
+                if not ticket:
+                    raise AppError("تیکت پیدا نشد.")
+                return self._json({"ticket": ticket})
             if path == "/api/chats":
                 user = self._require_user()
                 channel = (query.get("channel") or [""])[0].strip() or None
@@ -706,6 +725,90 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(
                     admin_broadcast(text, scope=scope, channels=channels)
                 )
+            if path == "/api/tickets":
+                user = self._require_user()
+                ticket = db.create_ticket(
+                    user["id"],
+                    subject=str(body.get("subject") or ""),
+                    body=str(body.get("body") or body.get("message") or ""),
+                )
+                return self._json({"ticket": ticket}, 201)
+            if path.startswith("/api/tickets/") and path.endswith("/messages"):
+                user = self._require_user()
+                ticket_id = path.strip("/").split("/")[2]
+                ticket = db.add_ticket_message(
+                    ticket_id,
+                    sender="user",
+                    body=str(body.get("body") or body.get("message") or ""),
+                    user_id=user["id"],
+                )
+                return self._json({"ticket": ticket})
+            if path.startswith("/api/tickets/") and path.endswith("/close"):
+                user = self._require_user()
+                ticket_id = path.strip("/").split("/")[2]
+                ticket = db.set_ticket_status(ticket_id, "closed", user_id=user["id"])
+                return self._json({"ticket": ticket})
+            if path.startswith("/api/admin/users/") and "/tickets/" in path and path.endswith("/messages"):
+                self._require_admin()
+                parts = path.strip("/").split("/")
+                # api/admin/users/{uid}/tickets/{tid}/messages
+                if len(parts) != 7:
+                    raise AppError("Not found.")
+                user_id = parts[3]
+                ticket_id = parts[5]
+                if not db.get_user(user_id):
+                    raise AppError("User not found.")
+                ticket = db.add_ticket_message(
+                    ticket_id,
+                    sender="admin",
+                    body=str(body.get("body") or body.get("message") or ""),
+                    user_id=user_id,
+                )
+                # Best-effort notify customer on linked messengers.
+                try:
+                    from messengers import build_messenger, collect_broadcast_targets
+
+                    note = (
+                        "پاسخ پشتیبانی دریافت شد.\n"
+                        f"موضوع: {ticket.get('subject')}\n"
+                        "برای مشاهده وارد پنل شوید:\n"
+                        f"{public_base_url()}/app"
+                    )
+                    for dest in collect_broadcast_targets(scope="private", channels=None):
+                        if dest["user_id"] != user_id:
+                            continue
+                        try:
+                            build_messenger(dest["channel"]).send_text(note, chat_id=dest["chat_id"])
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+                return self._json({"ticket": ticket})
+            if path.startswith("/api/admin/users/") and path.endswith("/tickets"):
+                self._require_admin()
+                parts = path.strip("/").split("/")
+                # api/admin/users/{uid}/tickets  -> create admin-initiated ticket
+                if len(parts) != 5:
+                    raise AppError("Not found.")
+                user_id = parts[3]
+                if not db.get_user(user_id):
+                    raise AppError("User not found.")
+                ticket = db.create_ticket_from_admin(
+                    user_id,
+                    subject=str(body.get("subject") or "پیام پشتیبانی"),
+                    body=str(body.get("body") or body.get("message") or ""),
+                )
+                return self._json({"ticket": ticket}, 201)
+            if path.startswith("/api/admin/users/") and path.endswith("/close"):
+                self._require_admin()
+                parts = path.strip("/").split("/")
+                # api/admin/users/{uid}/tickets/{tid}/close
+                if len(parts) != 7 or parts[4] != "tickets":
+                    raise AppError("Not found.")
+                user_id = parts[3]
+                ticket_id = parts[5]
+                ticket = db.set_ticket_status(ticket_id, "closed", user_id=user_id)
+                return self._json({"ticket": ticket})
             if path == "/api/logout":
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")

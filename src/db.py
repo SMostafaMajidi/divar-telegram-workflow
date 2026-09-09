@@ -265,6 +265,35 @@ def init_db(path: Path | None = None) -> None:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_filter_destinations_filter ON filter_destinations(filter_id)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS support_tickets (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    subject TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id, updated_at DESC)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS support_messages (
+                    id TEXT PRIMARY KEY,
+                    ticket_id TEXT NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+                    sender TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_support_messages_ticket ON support_messages(ticket_id, created_at ASC)"
+            )
             _migrate_messenger_schema(conn)
             _seed_plans(conn)
             conn.commit()
@@ -2433,3 +2462,272 @@ def resolve_filter_destinations(user: dict[str, Any], spec: dict[str, Any]) -> l
         if aid:
             return [{"channel": str(acc.get("channel") or "telegram"), "chat_id": aid}]
     return []
+
+
+def _ticket_public(row: sqlite3.Row | dict[str, Any], *, include_messages: bool = False) -> dict[str, Any]:
+    data = dict(row)
+    ticket = {
+        "id": data["id"],
+        "user_id": data["user_id"],
+        "subject": data["subject"] or "",
+        "status": data["status"] or "open",
+        "created_at": data["created_at"],
+        "updated_at": data["updated_at"],
+    }
+    if include_messages:
+        ticket["messages"] = list_ticket_messages(data["id"])
+    else:
+        # lightweight preview fields
+        with _lock:
+            conn = connect()
+            try:
+                last = conn.execute(
+                    """
+                    SELECT sender, body, created_at FROM support_messages
+                    WHERE ticket_id = ?
+                    ORDER BY created_at DESC, rowid DESC
+                    LIMIT 1
+                    """,
+                    (data["id"],),
+                ).fetchone()
+                count = conn.execute(
+                    "SELECT COUNT(*) AS c FROM support_messages WHERE ticket_id = ?",
+                    (data["id"],),
+                ).fetchone()
+            finally:
+                conn.close()
+        ticket["message_count"] = int(count["c"] if count else 0)
+        if last:
+            ticket["last_sender"] = last["sender"]
+            ticket["last_body"] = (last["body"] or "")[:180]
+            ticket["last_at"] = last["created_at"]
+        else:
+            ticket["last_sender"] = ""
+            ticket["last_body"] = ""
+            ticket["last_at"] = data["updated_at"]
+    return ticket
+
+
+def list_ticket_messages(ticket_id: str) -> list[dict[str, Any]]:
+    with _lock:
+        conn = connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM support_messages
+                WHERE ticket_id = ?
+                ORDER BY created_at ASC, rowid ASC
+                """,
+                (ticket_id,),
+            ).fetchall()
+            return [
+                {
+                    "id": row["id"],
+                    "ticket_id": row["ticket_id"],
+                    "sender": row["sender"],
+                    "body": row["body"] or "",
+                    "created_at": row["created_at"],
+                }
+                for row in rows
+            ]
+        finally:
+            conn.close()
+
+
+def list_user_tickets(user_id: str, *, status: str | None = None) -> list[dict[str, Any]]:
+    with _lock:
+        conn = connect()
+        try:
+            if status:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM support_tickets
+                    WHERE user_id = ? AND status = ?
+                    ORDER BY updated_at DESC
+                    """,
+                    (user_id, status),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM support_tickets
+                    WHERE user_id = ?
+                    ORDER BY updated_at DESC
+                    """,
+                    (user_id,),
+                ).fetchall()
+            return [_ticket_public(row) for row in rows]
+        finally:
+            conn.close()
+
+
+def get_ticket(ticket_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    with _lock:
+        conn = connect()
+        try:
+            if user_id:
+                row = conn.execute(
+                    "SELECT * FROM support_tickets WHERE id = ? AND user_id = ?",
+                    (ticket_id, user_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM support_tickets WHERE id = ?",
+                    (ticket_id,),
+                ).fetchone()
+            if not row:
+                return None
+            return _ticket_public(row, include_messages=True)
+        finally:
+            conn.close()
+
+
+def create_ticket(user_id: str, *, subject: str, body: str) -> dict[str, Any]:
+    subject_clean = str(subject or "").strip() or "بدون موضوع"
+    body_clean = str(body or "").strip()
+    if not body_clean:
+        raise AppError("متن پیام خالی است.")
+    if len(subject_clean) > 120:
+        raise AppError("موضوع خیلی طولانی است.")
+    if len(body_clean) > 4000:
+        raise AppError("متن پیام خیلی طولانی است.")
+    if not get_user(user_id):
+        raise AppError("User not found.")
+    ticket_id = uuid.uuid4().hex[:12]
+    msg_id = uuid.uuid4().hex[:12]
+    now = _now()
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO support_tickets (id, user_id, subject, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'open', ?, ?)
+                """,
+                (ticket_id, user_id, subject_clean, now, now),
+            )
+            conn.execute(
+                """
+                INSERT INTO support_messages (id, ticket_id, sender, body, created_at)
+                VALUES (?, ?, 'user', ?, ?)
+                """,
+                (msg_id, ticket_id, body_clean, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    found = get_ticket(ticket_id, user_id)
+    assert found
+    return found
+
+
+def create_ticket_from_admin(user_id: str, *, subject: str, body: str) -> dict[str, Any]:
+    subject_clean = str(subject or "").strip() or "پیام پشتیبانی"
+    body_clean = str(body or "").strip()
+    if not body_clean:
+        raise AppError("متن پیام خالی است.")
+    if len(subject_clean) > 120:
+        raise AppError("موضوع خیلی طولانی است.")
+    if len(body_clean) > 4000:
+        raise AppError("متن پیام خیلی طولانی است.")
+    if not get_user(user_id):
+        raise AppError("User not found.")
+    ticket_id = uuid.uuid4().hex[:12]
+    msg_id = uuid.uuid4().hex[:12]
+    now = _now()
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO support_tickets (id, user_id, subject, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'open', ?, ?)
+                """,
+                (ticket_id, user_id, subject_clean, now, now),
+            )
+            conn.execute(
+                """
+                INSERT INTO support_messages (id, ticket_id, sender, body, created_at)
+                VALUES (?, ?, 'admin', ?, ?)
+                """,
+                (msg_id, ticket_id, body_clean, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    found = get_ticket(ticket_id, user_id)
+    assert found
+    return found
+
+
+def add_ticket_message(
+    ticket_id: str,
+    *,
+    sender: str,
+    body: str,
+    user_id: str | None = None,
+    reopen: bool = True,
+) -> dict[str, Any]:
+    who = str(sender or "").strip().lower()
+    if who not in {"user", "admin"}:
+        raise AppError("sender نامعتبر است.")
+    body_clean = str(body or "").strip()
+    if not body_clean:
+        raise AppError("متن پیام خالی است.")
+    if len(body_clean) > 4000:
+        raise AppError("متن پیام خیلی طولانی است.")
+    ticket = get_ticket(ticket_id, user_id)
+    if not ticket:
+        raise AppError("تیکت پیدا نشد.")
+    if ticket["status"] == "closed" and who == "user" and not reopen:
+        raise AppError("این تیکت بسته شده است.")
+    msg_id = uuid.uuid4().hex[:12]
+    now = _now()
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO support_messages (id, ticket_id, sender, body, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (msg_id, ticket_id, who, body_clean, now),
+            )
+            if ticket["status"] == "closed" and reopen:
+                conn.execute(
+                    "UPDATE support_tickets SET status = 'open', updated_at = ? WHERE id = ?",
+                    (now, ticket_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE support_tickets SET updated_at = ? WHERE id = ?",
+                    (now, ticket_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    found = get_ticket(ticket_id, user_id if who == "user" else None)
+    assert found
+    return found
+
+
+def set_ticket_status(ticket_id: str, status: str, *, user_id: str | None = None) -> dict[str, Any]:
+    st = str(status or "").strip().lower()
+    if st not in {"open", "closed"}:
+        raise AppError("status باید open یا closed باشد.")
+    ticket = get_ticket(ticket_id, user_id)
+    if not ticket:
+        raise AppError("تیکت پیدا نشد.")
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute(
+                "UPDATE support_tickets SET status = ?, updated_at = ? WHERE id = ?",
+                (st, _now(), ticket_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    found = get_ticket(ticket_id, user_id)
+    assert found
+    return found

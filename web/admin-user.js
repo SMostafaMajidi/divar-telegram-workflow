@@ -1,4 +1,4 @@
-const state = { user: null, filters: [], chats: [], plans: [], invoices: [], watchEvents: [] };
+const state = { user: null, filters: [], chats: [], plans: [], invoices: [], watchEvents: [], tickets: [], activeTicket: null };
 const userId = location.pathname.split("/").filter(Boolean).pop();
 
 const INVOICE_STATUS = {
@@ -36,6 +36,15 @@ const els = {
   refreshPayments: $("#refresh-payments-btn"),
   watchList: $("#watch-list"),
   refreshWatch: $("#refresh-watch-btn"),
+  ticketList: $("#admin-ticket-list"),
+  ticketThread: $("#admin-ticket-thread"),
+  ticketForm: $("#admin-ticket-form"),
+  ticketId: $("#admin-ticket-id"),
+  ticketSubject: $("#admin-ticket-subject"),
+  ticketSubjectWrap: $("#admin-ticket-subject-wrap"),
+  ticketBody: $("#admin-ticket-body"),
+  ticketCloseBtn: $("#admin-ticket-close-btn"),
+  refreshTickets: $("#refresh-tickets-btn"),
   slotHint: $("#slot-hint"),
   rotate: $("#rotate-btn"),
   feed: $("#feed-link"),
@@ -445,6 +454,7 @@ function render() {
   renderRoutes();
   renderPayments();
   renderWatchLog();
+  renderTickets();
 }
 
 async function loadRoutes() {
@@ -587,6 +597,145 @@ els.refreshWatch?.addEventListener("click", async () => {
   }
 });
 
+function renderTickets() {
+  if (!els.ticketList) return;
+  els.ticketList.replaceChildren();
+  if (!state.tickets.length) {
+    els.ticketList.append(
+      Object.assign(document.createElement("p"), {
+        className: "meta",
+        textContent: "تیکتی نیست. از فرم سمت چپ پیام جدید بفرستید.",
+      }),
+    );
+  } else {
+    for (const ticket of state.tickets) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `ticket-card ${state.activeTicket?.id === ticket.id ? "active" : ""} ${ticket.status === "closed" ? "off" : ""}`;
+      btn.innerHTML = `
+        <div class="card-top">
+          <strong>${ticket.subject || "بدون موضوع"}</strong>
+          <span class="pill ${ticket.status === "closed" ? "warn" : "ok"}">${ticket.status === "closed" ? "بسته" : "باز"}</span>
+        </div>
+        <p class="meta">${ticket.last_body || "بدون پیام"}</p>
+      `;
+      btn.addEventListener("click", () => openAdminTicket(ticket.id));
+      els.ticketList.append(btn);
+    }
+  }
+  renderAdminThread(state.activeTicket);
+}
+
+function renderAdminThread(ticket) {
+  if (!els.ticketThread) return;
+  els.ticketThread.replaceChildren();
+  if (!ticket) {
+    els.ticketThread.append(
+      Object.assign(document.createElement("p"), {
+        className: "meta",
+        textContent: "یک تیکت را انتخاب کنید یا پیام جدید بفرستید.",
+      }),
+    );
+    if (els.ticketId) els.ticketId.value = "";
+    if (els.ticketSubjectWrap) els.ticketSubjectWrap.hidden = false;
+    if (els.ticketCloseBtn) els.ticketCloseBtn.hidden = true;
+    return;
+  }
+  if (els.ticketId) els.ticketId.value = ticket.id;
+  if (els.ticketSubjectWrap) els.ticketSubjectWrap.hidden = true;
+  if (els.ticketCloseBtn) els.ticketCloseBtn.hidden = ticket.status === "closed";
+  for (const msg of ticket.messages || []) {
+    const mine = msg.sender === "admin";
+    const bubble = document.createElement("div");
+    bubble.className = `ticket-bubble ${mine ? "mine" : "theirs"}`;
+    bubble.innerHTML = `
+      <p class="meta">${mine ? "شما (پشتیبانی)" : "مشتری"}</p>
+      <div>${msg.body || ""}</div>
+      <p class="meta">${typeof formatJalali === "function" ? formatJalali(msg.created_at) : msg.created_at || ""}</p>
+    `;
+    els.ticketThread.append(bubble);
+  }
+  els.ticketThread.scrollTop = els.ticketThread.scrollHeight;
+}
+
+async function loadTickets() {
+  const data = await api(`/api/admin/users/${userId}/tickets`);
+  state.tickets = data.tickets || [];
+  if (state.activeTicket) {
+    const still = state.tickets.find((t) => t.id === state.activeTicket.id);
+    if (!still) state.activeTicket = null;
+  }
+  renderTickets();
+}
+
+async function openAdminTicket(ticketId) {
+  try {
+    const data = await api(`/api/admin/users/${userId}/tickets/${ticketId}`);
+    state.activeTicket = data.ticket;
+    renderTickets();
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
+els.refreshTickets?.addEventListener("click", async () => {
+  try {
+    await loadTickets();
+    toast(state.tickets.length ? `${state.tickets.length} تیکت` : "تیکتی نیست", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+els.ticketCloseBtn?.addEventListener("click", async () => {
+  const id = els.ticketId?.value;
+  if (!id) return;
+  try {
+    const data = await api(`/api/admin/users/${userId}/tickets/${id}/close`, {
+      method: "POST",
+      body: {},
+    });
+    state.activeTicket = data.ticket;
+    await loadTickets();
+    toast("تیکت بسته شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
+els.ticketForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = (els.ticketBody?.value || "").trim();
+  if (!body) {
+    toast("متن پیام را بنویسید", "err");
+    return;
+  }
+  try {
+    let data;
+    if (els.ticketId?.value) {
+      data = await api(`/api/admin/users/${userId}/tickets/${els.ticketId.value}/messages`, {
+        method: "POST",
+        body: { body },
+      });
+    } else {
+      data = await api(`/api/admin/users/${userId}/tickets`, {
+        method: "POST",
+        body: {
+          subject: els.ticketSubject?.value || "پیام پشتیبانی",
+          body,
+        },
+      });
+    }
+    state.activeTicket = data.ticket;
+    if (els.ticketBody) els.ticketBody.value = "";
+    if (els.ticketSubject) els.ticketSubject.value = "";
+    await loadTickets();
+    toast("پیام ارسال شد", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
 els.rotate.onclick = async () => {
   if (!confirm("کلید API جدید ساخته شود؟ کلید قبلی از کار می‌افتد.")) return;
   try {
@@ -618,7 +767,7 @@ async function boot() {
   bindLogout();
   bindJalaliPickers();
   const initial = (location.hash || "").replace("#", "") || "account";
-  setTab(["account", "plan", "poll", "routes", "payments", "watch", "more"].includes(initial) ? initial : "account");
+  setTab(["account", "plan", "poll", "routes", "payments", "watch", "tickets", "more"].includes(initial) ? initial : "account");
   if (!userId) {
     toast("شناسه مشتری نامعتبر است", "err");
     return;
@@ -630,7 +779,7 @@ async function boot() {
     ]);
     state.user = data.user;
     state.plans = plans.plans || [];
-    await Promise.all([loadRoutes(), loadPayments(), loadWatchLog()]);
+    await Promise.all([loadRoutes(), loadPayments(), loadWatchLog(), loadTickets()]);
     render();
   } catch (err) {
     toast(err.message, "err");

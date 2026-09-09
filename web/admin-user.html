@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>مشتری — ادمین</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark11">
+  <link rel="stylesheet" href="/styles.css?v=dark12">
 </head>
 <body>
   <header class="topbar">
@@ -45,6 +45,7 @@
         <button type="button" class="seg-tab" data-tab="routes">فیلترها</button>
         <button type="button" class="seg-tab" data-tab="payments">پرداخت‌ها</button>
         <button type="button" class="seg-tab" data-tab="watch">سابقه پایش</button>
+        <button type="button" class="seg-tab" data-tab="tickets">تیکت‌ها</button>
         <button type="button" class="seg-tab" data-tab="more">بیشتر</button>
       </nav>
 
@@ -146,6 +147,35 @@
         <div id="watch-list" class="watch-log-list"></div>
       </div>
 
+      <div id="tickets-panel" class="tab-panel settings-clean" data-panel="tickets" hidden>
+        <div class="panel-head tight">
+          <div>
+            <p class="panel-lead" style="margin:0">تیکت و گفتگو</p>
+            <p class="meta" style="margin:4px 0 0">پیام‌های پشتیبانی این مشتری را ببینید و پاسخ دهید.</p>
+          </div>
+          <button id="refresh-tickets-btn" class="ghost small" type="button">تازه‌سازی</button>
+        </div>
+        <div class="ticket-admin-layout">
+          <div id="admin-ticket-list" class="ticket-list"></div>
+          <div class="ticket-admin-thread">
+            <div id="admin-ticket-thread" class="ticket-thread"></div>
+            <form id="admin-ticket-form" class="ticket-reply-box">
+              <input type="hidden" id="admin-ticket-id" value="">
+              <label id="admin-ticket-subject-wrap">موضوع (برای پیام جدید)
+                <input id="admin-ticket-subject" placeholder="مثلاً پیگیری پرداخت">
+              </label>
+              <label>پیام
+                <textarea id="admin-ticket-body" rows="4" required placeholder="پاسخ یا پیام جدید…"></textarea>
+              </label>
+              <div class="create-actions">
+                <button id="admin-ticket-close-btn" class="ghost small" type="button" hidden>بستن تیکت</button>
+                <button class="primary small" type="submit">ارسال</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
       <div id="more-panel" class="tab-panel settings-clean" data-panel="more" hidden>
         <p class="panel-lead">ابزارها و حذف</p>
         <div class="tool-block">
@@ -165,6 +195,6 @@
 
   <script src="/dates.js?v=2"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin-user.js?v=13"></script>
+  <script src="/admin-user.js?v=14"></script>
 </body>
 </html>
