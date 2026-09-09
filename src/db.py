@@ -1030,6 +1030,27 @@ def list_user_chats(user_id: str, channel: str | None = None) -> list[dict[str, 
             )
             if not chats[key].get("type"):
                 chats[key]["type"] = "private"
+    # Include private chats from linked messenger accounts (bale, …).
+    for acc in (user or {}).get("messenger_accounts") or []:
+        ch = str(acc.get("channel") or "").strip().lower() or "telegram"
+        aid = str(acc.get("account_id") or "").strip()
+        if not aid:
+            continue
+        if ch_filter and ch != ch_filter:
+            continue
+        key = (ch, aid)
+        if key in chats:
+            continue
+        chats[key] = {
+            "id": aid,
+            "channel": ch,
+            "type": "private",
+            "name": acc.get("display_name")
+            or acc.get("username")
+            or user.get("display_name")
+            or "چت شخصی",
+            "username": acc.get("username") or "",
+        }
     return sorted(
         chats.values(),
         key=lambda item: (

@@ -166,9 +166,15 @@ function fillChannelSelect(select, selected) {
 
 function fillDestChatSelect(select, channel, selected) {
   if (!select) return;
-  select.replaceChildren(el("option", { value: "", text: "انتخاب چت" }));
   const ch = channel || "telegram";
-  for (const chat of state.chats.filter((c) => (c.channel || "telegram") === ch)) {
+  const matched = state.chats.filter((c) => (c.channel || "telegram") === ch);
+  select.replaceChildren(
+    el("option", {
+      value: "",
+      text: matched.length ? "انتخاب چت" : "چتی برای این پیام‌رسان نیست — ربات را استارت/لاگین کنید",
+    }),
+  );
+  for (const chat of matched) {
     select.append(el("option", { value: chat.id, text: chatLabel(chat) }));
   }
   if (selected) {
@@ -176,7 +182,21 @@ function fillDestChatSelect(select, channel, selected) {
       select.append(el("option", { value: selected, text: selected }));
     }
     select.value = String(selected);
+  } else if (matched.length === 1) {
+    select.value = String(matched[0].id);
   }
+}
+
+async function refreshMessengerState() {
+  const [chats, messengers, me] = await Promise.all([
+    api("/api/chats"),
+    api("/api/messengers"),
+    api("/api/me"),
+  ]);
+  state.chats = chats.chats || [];
+  state.messengers = messengers.messengers || me.messengers || [];
+  if (me.user) state.user = me.user;
+  renderMessengers();
 }
 
 function renderDestList() {
@@ -772,7 +792,7 @@ function collectDivarFields() {
   return out;
 }
 
-function openEditor(filter = null) {
+async function openEditor(filter = null) {
   state.editing = filter;
   els.form.reset();
   els.form.id.value = filter?.id || "";
@@ -780,6 +800,11 @@ function openEditor(filter = null) {
   els.form.query.value = filter?.query || "";
   els.form.max_pages.value = filter?.max_pages || 3;
   els.form.enabled.checked = filter ? !!filter.enabled : true;
+  try {
+    await refreshMessengerState();
+  } catch (err) {
+    toast(err.message, "err");
+  }
   state.destinations = (filter?.destinations || [])
     .filter((d) => d && d.chat_id)
     .map((d) => ({
@@ -792,8 +817,13 @@ function openEditor(filter = null) {
       { channel: "telegram", chat_id: String(filter.chat_id), enabled: true },
     ];
   }
-  fillChannelSelect(els.destChannel);
-  fillDestChatSelect(els.destChat, els.destChannel?.value || "telegram");
+  const preferredChannel =
+    state.destinations[0]?.channel ||
+    state.messengers.find((m) => m.linked)?.channel ||
+    state.messengers[0]?.channel ||
+    "telegram";
+  fillChannelSelect(els.destChannel, preferredChannel);
+  fillDestChatSelect(els.destChat, els.destChannel?.value || preferredChannel);
   renderDestList();
   if (els.form.chat_id) {
     els.form.chat_id.value = state.destinations[0]?.chat_id || filter?.chat_id || "";
