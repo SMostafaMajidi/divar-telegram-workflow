@@ -70,19 +70,34 @@ def send_wallet_invoice(user: dict[str, Any], invoice: dict[str, Any]) -> dict[s
     if amount_rial <= 0:
         raise AppError("مبلغ فاکتور نامعتبر است.")
 
-    title = str(invoice.get("plan_name") or "اشتراک")[:32]
+    plan_name = str(invoice.get("plan_name") or "اشتراک").strip() or "اشتراک"
+    ref = str(invoice.get("ref_code") or invoice["id"])
+    # Bale UI always labels this message type as «درخواست پول» (not customizable).
+    # title/description are what we can control — keep them subscription-like.
+    title = f"اشتراک {plan_name}"[:32]
     description = (
-        f"پرداخت پلن {invoice.get('plan_name') or ''} · شناسه {invoice.get('ref_code') or invoice['id']}"
+        f"خرید اشتراک دیوار واچر · پلن {plan_name} · شناسه {ref}"
     )[:255]
+    price_label = f"پلن {plan_name}"[:32]
     client = build_messenger("bale", load_config())
     assert isinstance(client, BaleBotClient)
+    try:
+        client.send_text(
+            "فاکتور اشتراک شما آماده است.\n"
+            f"پلن: {plan_name}\n"
+            f"شناسه: {ref}\n\n"
+            "پیام بعدی دکمه پرداخت است (در بله به آن «درخواست پول» می‌گویند).",
+            chat_id=chat_id,
+        )
+    except Exception:
+        pass
     result = client.send_invoice(
         chat_id=chat_id,
         title=title,
         description=description,
         payload=_invoice_payload(str(invoice["id"])),
         provider_token=bale_payment_provider_token(),
-        prices=[{"label": title, "amount": amount_rial}],
+        prices=[{"label": price_label, "amount": amount_rial}],
     )
     db.mark_invoice_bale_sent(str(invoice["id"]), user["id"])
     username = client.bot_username() or ""
