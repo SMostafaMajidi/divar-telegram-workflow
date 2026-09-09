@@ -484,7 +484,9 @@ def messenger_client_for_user(
 
 def public_messenger_payload(user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     import db
+    from plans import channel_allowed, user_capabilities
 
+    caps = user_capabilities(user)
     accounts = {
         str(a.get("channel") or "").lower(): a
         for a in (user or {}).get("messenger_accounts") or []
@@ -505,43 +507,77 @@ def public_messenger_payload(user: dict[str, Any] | None = None) -> list[dict[st
         eitaa_cred = db.get_messenger_credential(user["id"], "eitaa")
     payload = []
     for item in messenger_configs():
-        acc = accounts.get(item["channel"])
+        ch = item["channel"]
+        allowed = channel_allowed(user, ch) if user else True
+        if ch == "bale" and not allowed:
+            continue
+        acc = accounts.get(ch)
         payload.append(
             {
-                "channel": item["channel"],
+                "channel": ch,
                 "label": item["label"],
-                "enabled": True,
+                "enabled": allowed,
                 "bot_username": item["bot_username"],
-                "deep_link": item["deep_link"],
+                "deep_link": item["deep_link"] if allowed else "",
                 "link_mode": item.get("link_mode") or "bot",
                 "linked": bool(acc and acc.get("account_id")),
                 "configured": True,
                 "account_id": (acc or {}).get("account_id") or "",
                 "username": (acc or {}).get("username") or "",
-                "hint": "",
+                "hint": "" if allowed else "در پلن فعلی فعال نیست",
             }
         )
-    # Eitaa is always offered; token is per-customer (Eitaayar).
-    payload.append(
-        {
-            "channel": "eitaa",
-            "label": CHANNEL_LABELS["eitaa"],
-            "enabled": True,
-            "bot_username": None,
-            "deep_link": "",
-            "link_mode": "channel_only",
-            "linked": bool(eitaa_cred and eitaa_chats),
-            "configured": bool(eitaa_cred and eitaa_cred.get("configured")),
-            "account_id": "",
-            "username": "",
-            "token_masked": (eitaa_cred or {}).get("token_masked") or "",
-            "channels": eitaa_chats,
-            "hint": (
-                "توکن ایتایار خود را در بخش ایتا ذخیره کنید، @sender را ادمین کانال کنید "
-                "و شناسه کانال را اضافه کنید."
-            ),
-        }
-    )
+    # Eitaa: only include when plan allows (or show locked for UI)
+    eitaa_allowed = channel_allowed(user, "eitaa") if user else False
+    if eitaa_allowed or (user and (eitaa_cred or eitaa_chats)):
+        payload.append(
+            {
+                "channel": "eitaa",
+                "label": CHANNEL_LABELS["eitaa"],
+                "enabled": eitaa_allowed,
+                "bot_username": None,
+                "deep_link": "",
+                "link_mode": "channel_only",
+                "linked": bool(eitaa_cred and eitaa_chats),
+                "configured": bool(eitaa_cred and eitaa_cred.get("configured")),
+                "account_id": "",
+                "username": "",
+                "token_masked": (eitaa_cred or {}).get("token_masked") or "",
+                "channels": eitaa_chats if eitaa_allowed else [],
+                "hint": (
+                    "توکن ایتایار خود را در بخش ایتا ذخیره کنید، @sender را ادمین کانال کنید "
+                    "و شناسه کانال را اضافه کنید."
+                    if eitaa_allowed
+                    else "پلن فعلی ایتا ندارد"
+                ),
+                "plan_locked": not eitaa_allowed,
+            }
+        )
+    elif user is None:
+        payload.append(
+            {
+                "channel": "eitaa",
+                "label": CHANNEL_LABELS["eitaa"],
+                "enabled": True,
+                "bot_username": None,
+                "deep_link": "",
+                "link_mode": "channel_only",
+                "linked": False,
+                "configured": False,
+                "account_id": "",
+                "username": "",
+                "token_masked": "",
+                "channels": [],
+                "hint": (
+                    "توکن ایتایار خود را در بخش ایتا ذخیره کنید، @sender را ادمین کانال کنید "
+                    "و شناسه کانال را اضافه کنید."
+                ),
+            }
+        )
+    # Attach caps for clients that need destination limits
+    for row in payload:
+        row["max_destinations"] = caps.get("max_destinations", 0)
+        row["allow_bale_wallet"] = bool(caps.get("allow_bale_wallet"))
     return payload
 
 

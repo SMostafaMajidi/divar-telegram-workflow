@@ -207,6 +207,10 @@ def init_db(path: Path | None = None) -> None:
                     poll_interval_minutes INTEGER NOT NULL DEFAULT 5,
                     ai_enabled INTEGER NOT NULL DEFAULT 0,
                     api_access INTEGER NOT NULL DEFAULT 0,
+                    allow_bale INTEGER NOT NULL DEFAULT 1,
+                    allow_eitaa INTEGER NOT NULL DEFAULT 0,
+                    allow_bale_wallet INTEGER NOT NULL DEFAULT 0,
+                    max_destinations INTEGER NOT NULL DEFAULT 0,
                     duration_days INTEGER NOT NULL DEFAULT 30,
                     features_json TEXT NOT NULL DEFAULT '[]',
                     sort_order INTEGER NOT NULL DEFAULT 0,
@@ -311,10 +315,66 @@ def init_db(path: Path | None = None) -> None:
                 "CREATE INDEX IF NOT EXISTS idx_support_messages_ticket ON support_messages(ticket_id, created_at ASC)"
             )
             _migrate_messenger_schema(conn)
+            _migrate_plan_caps(conn)
             _seed_plans(conn)
             conn.commit()
         finally:
             conn.close()
+
+
+def _migrate_plan_caps(conn: sqlite3.Connection) -> None:
+    from plans import DEFAULT_PLANS
+
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(plans)").fetchall()}
+    if not cols:
+        return
+    alters = [
+        ("allow_bale", "INTEGER NOT NULL DEFAULT 1"),
+        ("allow_eitaa", "INTEGER NOT NULL DEFAULT 0"),
+        ("allow_bale_wallet", "INTEGER NOT NULL DEFAULT 0"),
+        ("max_destinations", "INTEGER NOT NULL DEFAULT 0"),
+    ]
+    added = False
+    for name, decl in alters:
+        if name not in cols:
+            conn.execute(f"ALTER TABLE plans ADD COLUMN {name} {decl}")
+            added = True
+
+    def apply_defaults() -> None:
+        for plan in DEFAULT_PLANS.values():
+            conn.execute(
+                """
+                UPDATE plans
+                SET allow_bale = ?,
+                    allow_eitaa = ?,
+                    allow_bale_wallet = ?,
+                    max_destinations = ?
+                WHERE id = ?
+                """,
+                (
+                    1 if plan.get("allow_bale") else 0,
+                    1 if plan.get("allow_eitaa") else 0,
+                    1 if plan.get("allow_bale_wallet") else 0,
+                    int(plan.get("max_destinations") or 0),
+                    plan["id"],
+                ),
+            )
+
+    if added:
+        apply_defaults()
+        return
+    # Repair: columns existed with SQL defaults but never got product defaults
+    # (pro should have eitaa + wallet; all-zero caps means uninitialized).
+    pro = conn.execute(
+        "SELECT allow_eitaa, allow_bale_wallet, max_destinations FROM plans WHERE id = 'pro'"
+    ).fetchone()
+    if (
+        pro
+        and int(pro["allow_eitaa"] or 0) == 0
+        and int(pro["allow_bale_wallet"] or 0) == 0
+        and int(pro["max_destinations"] or 0) == 0
+    ):
+        apply_defaults()
 
 
 def _migrate_messenger_schema(conn: sqlite3.Connection) -> None:
@@ -424,9 +484,10 @@ def _seed_plans(conn: sqlite3.Connection) -> None:
             """
             INSERT INTO plans (
                 id, name, tagline, price_toman, max_filters, max_criteria,
-                poll_interval_minutes, ai_enabled, api_access, duration_days,
-                features_json, sort_order, active, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                poll_interval_minutes, ai_enabled, api_access,
+                allow_bale, allow_eitaa, allow_bale_wallet, max_destinations,
+                duration_days, features_json, sort_order, active, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 plan["id"],
@@ -438,6 +499,10 @@ def _seed_plans(conn: sqlite3.Connection) -> None:
                 int(plan.get("poll_interval_minutes") or 5),
                 1 if plan.get("ai_enabled") else 0,
                 1 if plan.get("api_access") else 0,
+                1 if plan.get("allow_bale") else 0,
+                1 if plan.get("allow_eitaa") else 0,
+                1 if plan.get("allow_bale_wallet") else 0,
+                int(plan.get("max_destinations") or 0),
                 int(plan.get("duration_days") or 30),
                 json.dumps(plan.get("features") or [], ensure_ascii=False),
                 int(plan.get("sort_order") or 0),
@@ -2086,6 +2151,7 @@ def _plan_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if not isinstance(features, list):
         features = []
     max_criteria = row["max_criteria"]
+    keys = row.keys()
     return {
         "id": row["id"],
         "name": row["name"],
@@ -2096,6 +2162,10 @@ def _plan_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "poll_interval_minutes": int(row["poll_interval_minutes"] or 5),
         "ai_enabled": bool(row["ai_enabled"]),
         "api_access": bool(row["api_access"]),
+        "allow_bale": bool(row["allow_bale"]) if "allow_bale" in keys else True,
+        "allow_eitaa": bool(row["allow_eitaa"]) if "allow_eitaa" in keys else False,
+        "allow_bale_wallet": bool(row["allow_bale_wallet"]) if "allow_bale_wallet" in keys else False,
+        "max_destinations": int(row["max_destinations"] or 0) if "max_destinations" in keys else 0,
         "duration_days": int(row["duration_days"] or 30),
         "features": [str(x) for x in features],
         "sort_order": int(row["sort_order"] or 0),
@@ -2164,6 +2234,10 @@ def upsert_plan(body: dict[str, Any], *, create: bool = False) -> dict[str, Any]
         max(1, min(int(body.get("poll_interval_minutes") or 5), 1440)),
         1 if body.get("ai_enabled") else 0,
         1 if body.get("api_access") else 0,
+        1 if body.get("allow_bale") else 0,
+        1 if body.get("allow_eitaa") else 0,
+        1 if body.get("allow_bale_wallet") else 0,
+        max(0, min(int(body.get("max_destinations") or 0), 50)),
         max(1, min(int(body.get("duration_days") or 30), 3650)),
         json.dumps(features, ensure_ascii=False),
         int(body.get("sort_order") or 0),
@@ -2185,8 +2259,9 @@ def upsert_plan(body: dict[str, Any], *, create: bool = False) -> dict[str, Any]
                     """
                     UPDATE plans SET
                         name=?, tagline=?, price_toman=?, max_filters=?, max_criteria=?,
-                        poll_interval_minutes=?, ai_enabled=?, api_access=?, duration_days=?,
-                        features_json=?, sort_order=?, active=?, updated_at=?
+                        poll_interval_minutes=?, ai_enabled=?, api_access=?,
+                        allow_bale=?, allow_eitaa=?, allow_bale_wallet=?, max_destinations=?,
+                        duration_days=?, features_json=?, sort_order=?, active=?, updated_at=?
                     WHERE id=?
                     """,
                     values,
@@ -2196,9 +2271,10 @@ def upsert_plan(body: dict[str, Any], *, create: bool = False) -> dict[str, Any]
                     """
                     INSERT INTO plans (
                         name, tagline, price_toman, max_filters, max_criteria,
-                        poll_interval_minutes, ai_enabled, api_access, duration_days,
-                        features_json, sort_order, active, updated_at, id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        poll_interval_minutes, ai_enabled, api_access,
+                        allow_bale, allow_eitaa, allow_bale_wallet, max_destinations,
+                        duration_days, features_json, sort_order, active, updated_at, id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     values,
                 )
@@ -2643,9 +2719,12 @@ def set_filter_destinations(
     filter_id: str,
     destinations: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    from plans import assert_destinations_allowed
+
     filt = get_filter(filter_id, user_id)
     if not filt:
         raise AppError("Filter not found.")
+    user = get_user(user_id)
     cleaned: list[tuple[str, str, bool]] = []
     seen: set[tuple[str, str]] = set()
     for item in destinations or []:
@@ -2662,6 +2741,10 @@ def set_filter_destinations(
             continue
         seen.add(key)
         cleaned.append((ch, cid, bool(item.get("enabled", True))))
+    assert_destinations_allowed(
+        user,
+        [{"channel": ch, "chat_id": cid, "enabled": en} for ch, cid, en in cleaned],
+    )
     with _lock:
         conn = connect()
         try:
@@ -2704,6 +2787,8 @@ def set_filter_destinations(
 
 def resolve_filter_destinations(user: dict[str, Any], spec: dict[str, Any]) -> list[dict[str, str]]:
     """Return enabled destinations for watch delivery."""
+    from plans import channel_allowed
+
     destinations = list(spec.get("destinations") or [])
     if not destinations and spec.get("id"):
         destinations = list_filter_destinations(str(spec["id"]))
@@ -2712,6 +2797,8 @@ def resolve_filter_destinations(user: dict[str, Any], spec: dict[str, Any]) -> l
         if item.get("enabled") is False:
             continue
         ch = str(item.get("channel") or "telegram").strip().lower() or "telegram"
+        if not channel_allowed(user, ch):
+            continue
         cid = str(item.get("chat_id") or "").strip()
         if ch == "eitaa":
             from messengers import normalize_eitaa_chat_id
@@ -2723,15 +2810,16 @@ def resolve_filter_destinations(user: dict[str, Any], spec: dict[str, Any]) -> l
         return out
     # Legacy fallbacks
     legacy = str(spec.get("chat_id") or "").strip()
-    if legacy:
+    if legacy and channel_allowed(user, "telegram"):
         return [{"channel": "telegram", "chat_id": legacy}]
     tg = str(user.get("telegram_chat_id") or "").strip()
-    if tg:
+    if tg and channel_allowed(user, "telegram"):
         return [{"channel": "telegram", "chat_id": tg}]
     for acc in user.get("messenger_accounts") or []:
         aid = str(acc.get("account_id") or "").strip()
-        if aid:
-            return [{"channel": str(acc.get("channel") or "telegram"), "chat_id": aid}]
+        ch = str(acc.get("channel") or "telegram")
+        if aid and channel_allowed(user, ch):
+            return [{"channel": ch, "chat_id": aid}]
     return []
 
 

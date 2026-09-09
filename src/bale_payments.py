@@ -50,7 +50,11 @@ def parse_invoice_payload(payload: str) -> str | None:
 
 def send_wallet_invoice(user: dict[str, Any], invoice: dict[str, Any]) -> dict[str, Any]:
     import db
+    from plans import user_capabilities
 
+    caps = user_capabilities(user)
+    if not caps.get("allow_bale_wallet"):
+        raise AppError("پلن فعلی شما پرداخت کیف‌پول بله ندارد.")
     if not bale_wallet_ready():
         raise AppError("پرداخت کیف‌پول بله فعال نیست.")
     if not invoice or invoice.get("status") not in {"pending", "awaiting_review"}:

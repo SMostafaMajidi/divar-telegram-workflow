@@ -31,6 +31,9 @@ function render() {
         <div class="user-hero-pills">
           ${plan.ai_enabled ? '<span class="pill ok">AI</span>' : ""}
           ${plan.api_access ? '<span class="pill ok">API</span>' : ""}
+          ${plan.allow_bale ? '<span class="pill ok">بله</span>' : ""}
+          ${plan.allow_eitaa ? '<span class="pill ok">ایتا</span>' : ""}
+          ${plan.allow_bale_wallet ? '<span class="pill ok">کیف‌پول</span>' : ""}
           <span class="pill ${plan.active ? "ok" : "warn"}">${plan.active ? "فعال" : "غیرفعال"}</span>
         </div>
       </div>
@@ -69,10 +72,18 @@ function openEditor(plan = null) {
     els.form.sort_order.value = plan.sort_order ?? 0;
     els.form.ai_enabled.checked = !!plan.ai_enabled;
     els.form.api_access.checked = !!plan.api_access;
+    els.form.allow_bale.checked = plan.allow_bale !== false;
+    els.form.allow_eitaa.checked = !!plan.allow_eitaa;
+    els.form.allow_bale_wallet.checked = !!plan.allow_bale_wallet;
+    els.form.max_destinations.value = plan.max_destinations ?? 0;
     els.form.active.checked = plan.active !== false;
     els.form.features.value = (plan.features || []).join("\n");
   } else {
     els.form.active.checked = true;
+    els.form.allow_bale.checked = true;
+    els.form.allow_eitaa.checked = false;
+    els.form.allow_bale_wallet.checked = false;
+    els.form.max_destinations.value = 0;
     els.form.duration_days.value = 30;
     els.form.max_filters.value = 3;
     els.form.max_criteria.value = 0;
@@ -113,6 +124,10 @@ els.form.addEventListener("submit", async (e) => {
     sort_order: Number(els.form.sort_order.value || 0),
     ai_enabled: els.form.ai_enabled.checked,
     api_access: els.form.api_access.checked,
+    allow_bale: els.form.allow_bale.checked,
+    allow_eitaa: els.form.allow_eitaa.checked,
+    allow_bale_wallet: els.form.allow_bale_wallet.checked,
+    max_destinations: Number(els.form.max_destinations.value || 0),
     active: els.form.active.checked,
     features: els.form.features.value,
   };

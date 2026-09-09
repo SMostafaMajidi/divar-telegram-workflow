@@ -251,6 +251,13 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 return self._file(WEB_DIR / "portal.html")
+            if path == "/app/chats":
+                if not self._cookie("session") or not db.get_session_user(self._cookie("session")):
+                    self.send_response(302)
+                    self.send_header("Location", "/")
+                    self.end_headers()
+                    return
+                return self._file(WEB_DIR / "chats.html")
             if path == "/app/billing":
                 if not self._cookie("session") or not db.get_session_user(self._cookie("session")):
                     self.send_response(302)
@@ -305,6 +312,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/app-login.js",
                 "/app-api.js",
                 "/portal.js",
+                "/chats.js",
                 "/billing.js",
                 "/bank-card.js",
                 "/feed.js",
@@ -589,7 +597,7 @@ class Handler(BaseHTTPRequestHandler):
                 user_id = path.strip("/").split("/")[3]
                 if not db.get_user(user_id):
                     raise AppError("User not found.")
-                return self._json(_save_eitaa_token(user_id, body))
+                return self._json(_save_eitaa_token(user_id, body, enforce_caps=False))
             if path.startswith("/api/admin/users/") and path.endswith("/eitaa/channels"):
                 self._require_admin()
                 parts = path.strip("/").split("/")
@@ -599,7 +607,7 @@ class Handler(BaseHTTPRequestHandler):
                 user_id = parts[3]
                 if not db.get_user(user_id):
                     raise AppError("User not found.")
-                return self._json(_add_eitaa_channel(user_id, body), 201)
+                return self._json(_add_eitaa_channel(user_id, body, enforce_caps=False), 201)
             if path.startswith("/api/invoices/") and path.endswith("/paid"):
                 user = self._require_user()
                 invoice_id = path.split("/")[3]
@@ -1163,6 +1171,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _admin_user(user: dict) -> dict:
+    from plans import user_capabilities
+
     config = load_config()
     interval = user_poll_interval_minutes(user, config)
     offset = user_poll_offset_minutes(user, config)
@@ -1179,11 +1189,12 @@ def _admin_user(user: dict) -> dict:
         "default_best_count": user_best_count(None, config),
         "filter_count": db.user_filter_count(user["id"]),
         "eitaa": _eitaa_payload(user["id"]),
+        "capabilities": user_capabilities(user),
     }
 
 
 def _safe_user(user: dict) -> dict:
-    from plans import effective_max_criteria
+    from plans import effective_max_criteria, user_capabilities
 
     return {
         "id": user["id"],
@@ -1210,6 +1221,7 @@ def _safe_user(user: dict) -> dict:
         "best_count": user.get("best_count"),
         "messenger_accounts": user.get("messenger_accounts") or [],
         "api_access": has_api_access(user),
+        "capabilities": user_capabilities(user),
     }
 
 
@@ -1232,8 +1244,13 @@ def _eitaa_payload(user_id: str) -> dict:
     }
 
 
-def _save_eitaa_token(user_id: str, body: dict) -> dict:
+def _save_eitaa_token(user_id: str, body: dict, *, enforce_caps: bool = True) -> dict:
     from messengers import verify_eitaayar_token
+    from plans import channel_allowed
+
+    user = db.get_user(user_id)
+    if enforce_caps and user and not channel_allowed(user, "eitaa"):
+        raise AppError("پلن فعلی شما ایتا ندارد. پلن بالاتر بگیرید.")
 
     token = str(body.get("token") or "").strip()
     if not token:
@@ -1248,9 +1265,13 @@ def _save_eitaa_token(user_id: str, body: dict) -> dict:
     return {"ok": True, "eitaa": _eitaa_payload(user_id), "account": info}
 
 
-def _add_eitaa_channel(user_id: str, body: dict) -> dict:
+def _add_eitaa_channel(user_id: str, body: dict, *, enforce_caps: bool = True) -> dict:
     from messengers import normalize_eitaa_chat_id
+    from plans import channel_allowed
 
+    user = db.get_user(user_id)
+    if enforce_caps and user and not channel_allowed(user, "eitaa"):
+        raise AppError("پلن فعلی شما ایتا ندارد. پلن بالاتر بگیرید.")
     if not db.get_messenger_token(user_id, "eitaa"):
         raise AppError("اول توکن ایتایار را ذخیره کنید.")
     chat_id = normalize_eitaa_chat_id(str(body.get("chat_id") or body.get("id") or ""))
