@@ -958,9 +958,18 @@ select[multiple] { min-height: 120px; }
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.03);
   display: grid;
-  gap: 8px;
+  gap: 16px;
 }
 .pay-box h3 { margin: 0; font-size: 16px; }
+.pay-method { display: grid; gap: 8px; }
+.pay-bale-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.ok-hint { color: var(--ok, #3dd6c6); }
 .payment-page { overflow: visible; }
 
 .pay-amount-box {

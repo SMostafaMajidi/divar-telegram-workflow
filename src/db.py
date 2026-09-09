@@ -191,6 +191,10 @@ def init_db(path: Path | None = None) -> None:
                 conn.execute("ALTER TABLE invoices ADD COLUMN receipt_path TEXT")
             if inv_cols and "receipt_name" not in inv_cols:
                 conn.execute("ALTER TABLE invoices ADD COLUMN receipt_name TEXT")
+            if inv_cols and "payment_method" not in inv_cols:
+                conn.execute("ALTER TABLE invoices ADD COLUMN payment_method TEXT")
+            if inv_cols and "provider_charge_id" not in inv_cols:
+                conn.execute("ALTER TABLE invoices ADD COLUMN provider_charge_id TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS plans (
@@ -1612,6 +1616,12 @@ def _invoice_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
 
     plan = get_plan(row["plan_id"])
     amount = int(row["amount_toman"] or 0)
+    payment_method = ""
+    provider_charge_id = ""
+    if "payment_method" in row.keys():
+        payment_method = row["payment_method"] or ""
+    if "provider_charge_id" in row.keys():
+        provider_charge_id = row["provider_charge_id"] or ""
     return {
         "id": row["id"],
         "user_id": row["user_id"],
@@ -1625,6 +1635,8 @@ def _invoice_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "receipt_path": row["receipt_path"] if "receipt_path" in row.keys() else "",
         "receipt_name": row["receipt_name"] if "receipt_name" in row.keys() else "",
         "has_receipt": bool(row["receipt_path"] if "receipt_path" in row.keys() else None),
+        "payment_method": payment_method,
+        "provider_charge_id": provider_charge_id,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "paid_at": row["paid_at"] or "",
@@ -1906,12 +1918,110 @@ def confirm_invoice(invoice_id: str) -> dict[str, Any]:
             conn.execute(
                 """
                 UPDATE invoices
-                SET status = 'paid', paid_at = ?, updated_at = ?
+                SET status = 'paid', paid_at = ?, updated_at = ?,
+                    payment_method = COALESCE(NULLIF(payment_method, ''), 'card')
                 WHERE id = ?
                 """,
                 (now, now, invoice_id),
             )
             # Close other open invoices for the same user+plan.
+            conn.execute(
+                """
+                UPDATE invoices
+                SET status = 'cancelled', updated_at = ?
+                WHERE user_id = ? AND plan_id = ? AND id != ?
+                  AND status IN ('pending', 'awaiting_review')
+                """,
+                (now, invoice["user_id"], invoice["plan_id"], invoice_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    out = get_invoice(invoice_id)
+    assert out
+    return {"invoice": out, "user": user}
+
+
+def mark_invoice_bale_sent(invoice_id: str, user_id: str) -> dict[str, Any]:
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+            if not row or row["user_id"] != user_id:
+                raise AppError("فاکتور پیدا نشد.")
+            if row["status"] not in {"pending", "awaiting_review"}:
+                raise AppError("این فاکتور قابل پرداخت نیست.")
+            now = _now()
+            method = ""
+            if "payment_method" in row.keys():
+                method = row["payment_method"] or ""
+            if not method:
+                conn.execute(
+                    """
+                    UPDATE invoices
+                    SET payment_method = 'bale_wallet', updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, invoice_id),
+                )
+                conn.commit()
+            refreshed = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+            return _invoice_from_row(refreshed)  # type: ignore[return-value]
+        finally:
+            conn.close()
+
+
+def confirm_invoice_from_wallet(
+    invoice_id: str,
+    *,
+    provider_charge_id: str = "",
+    total_amount_rial: int | None = None,
+    payer_chat_id: str | None = None,
+) -> dict[str, Any]:
+    invoice = get_invoice(invoice_id)
+    if not invoice:
+        raise AppError("فاکتور پیدا نشد.")
+    if invoice["status"] == "paid":
+        user = get_user(invoice["user_id"])
+        return {"invoice": invoice, "user": user}
+    if invoice["status"] not in {"pending", "awaiting_review"}:
+        raise AppError("این فاکتور قابل تأیید نیست.")
+    if total_amount_rial is not None:
+        expected = int(invoice.get("amount_toman") or 0) * 10
+        if int(total_amount_rial) != expected:
+            raise AppError("مبلغ پرداخت با فاکتور هم‌خوانی ندارد.")
+    if payer_chat_id:
+        owner = get_user_by_messenger_account("bale", str(payer_chat_id))
+        if owner and owner["id"] != invoice["user_id"]:
+            raise AppError("این فاکتور متعلق به حساب دیگری است.")
+    user = apply_subscription(
+        invoice["user_id"],
+        invoice["plan_id"],
+        renew=True,
+        apply_limits=True,
+    )
+    charge = str(provider_charge_id or "").strip()[:120]
+    note = (invoice.get("payer_note") or "").strip()
+    if charge and "بله" not in note:
+        note = (note + " · " if note else "") + f"پرداخت بله {charge}"
+        note = note[:200]
+    with _lock:
+        conn = connect()
+        try:
+            now = _now()
+            conn.execute(
+                """
+                UPDATE invoices
+                SET status = 'paid',
+                    paid_at = ?,
+                    updated_at = ?,
+                    payment_method = 'bale_wallet',
+                    provider_charge_id = ?,
+                    payer_note = ?
+                WHERE id = ?
+                """,
+                (now, now, charge, note, invoice_id),
+            )
             conn.execute(
                 """
                 UPDATE invoices

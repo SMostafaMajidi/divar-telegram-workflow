@@ -443,6 +443,8 @@ def payment_info() -> dict[str, Any]:
     sheba = (os.getenv("PAYMENT_SHEBA") or "").strip().replace(" ", "").upper()
     support = (os.getenv("SUPPORT_TELEGRAM") or "").strip().lstrip("@")
     note = (os.getenv("PAYMENT_NOTE") or "").strip()
+    bale_token = bool((os.getenv("BALE_BOT_TOKEN") or "").strip())
+    bale_provider = bool((os.getenv("BALE_PAYMENT_PROVIDER_TOKEN") or "").strip())
     return {
         "card_number": card,
         "card_holder": holder,
@@ -453,6 +455,8 @@ def payment_info() -> dict[str, Any]:
         "note": note
         or "مبلغ را کارت‌به‌کارت کنید و شناسه فاکتور را در توضیحات واریز بنویسید.",
         "configured": bool(card and holder),
+        "bale_wallet_ready": bool(bale_token and bale_provider),
+        "bale_payment_configured": bale_provider,
     }
 
 

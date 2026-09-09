@@ -119,7 +119,9 @@ class TelegramBotClient(TelegramNotifier):
             params={
                 "offset": offset,
                 "timeout": timeout,
-                "allowed_updates": '["message","edited_message","channel_post","my_chat_member"]',
+                "allowed_updates": (
+                    '["message","edited_message","channel_post","my_chat_member","pre_checkout_query"]'
+                ),
             },
             timeout=timeout + 10,
         )
@@ -136,6 +138,47 @@ class BaleBotClient(TelegramBotClient):
     channel = "bale"
     api_template = BALE_API
     deep_link_base = "https://ble.ir/{username}"
+
+    def send_invoice(
+        self,
+        *,
+        chat_id: str,
+        title: str,
+        description: str,
+        payload: str,
+        provider_token: str,
+        prices: list[dict[str, Any]],
+        photo_url: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "chat_id": str(chat_id),
+            "title": str(title)[:32],
+            "description": str(description)[:255],
+            "payload": str(payload)[:128],
+            "provider_token": str(provider_token),
+            "prices": prices,
+        }
+        if photo_url:
+            body["photo_url"] = photo_url
+        return self._call("sendInvoice", body)
+
+    def answer_pre_checkout_query(
+        self,
+        pre_checkout_query_id: str,
+        *,
+        ok: bool,
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "pre_checkout_query_id": str(pre_checkout_query_id),
+            "ok": bool(ok),
+        }
+        if not ok and error_message:
+            body["error_message"] = str(error_message)[:200]
+        return self._call("answerPreCheckoutQuery", body)
+
+    def inquire_transaction(self, transaction_id: str) -> dict[str, Any]:
+        return self._call("inquireTransaction", {"transaction_id": str(transaction_id)})
 
     def send_listing(
         self,
