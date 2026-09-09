@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>مشتری — ادمین</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark10">
+  <link rel="stylesheet" href="/styles.css?v=dark11">
 </head>
 <body>
   <header class="topbar">
@@ -44,6 +44,7 @@
         <button type="button" class="seg-tab" data-tab="poll">پایش</button>
         <button type="button" class="seg-tab" data-tab="routes">فیلترها</button>
         <button type="button" class="seg-tab" data-tab="payments">پرداخت‌ها</button>
+        <button type="button" class="seg-tab" data-tab="watch">سابقه پایش</button>
         <button type="button" class="seg-tab" data-tab="more">بیشتر</button>
       </nav>
 
@@ -134,6 +135,17 @@
         <div id="payment-list" class="invoice-list"></div>
       </div>
 
+      <div id="watch-panel" class="tab-panel settings-clean" data-panel="watch" hidden>
+        <div class="panel-head tight">
+          <div>
+            <p class="panel-lead" style="margin:0">سابقه پایش</p>
+            <p class="meta" style="margin:4px 0 0">جستجو و ارسال (تلگرام و بعداً ایمیل/پیامک). تا ۲۰۰ رویداد اخیر نگه داشته می‌شود.</p>
+          </div>
+          <button id="refresh-watch-btn" class="ghost small" type="button">تازه‌سازی</button>
+        </div>
+        <div id="watch-list" class="watch-log-list"></div>
+      </div>
+
       <div id="more-panel" class="tab-panel settings-clean" data-panel="more" hidden>
         <p class="panel-lead">ابزارها و حذف</p>
         <div class="tool-block">
@@ -153,6 +165,6 @@
 
   <script src="/dates.js?v=2"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin-user.js?v=11"></script>
+  <script src="/admin-user.js?v=12"></script>
 </body>
 </html>

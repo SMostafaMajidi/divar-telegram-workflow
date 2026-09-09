@@ -209,6 +209,30 @@ def init_db(path: Path = DB_PATH) -> None:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS watch_events (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    filter_id TEXT,
+                    filter_name TEXT,
+                    platform TEXT NOT NULL DEFAULT 'divar',
+                    channel TEXT NOT NULL DEFAULT 'telegram',
+                    action TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    found_count INTEGER NOT NULL DEFAULT 0,
+                    new_count INTEGER NOT NULL DEFAULT 0,
+                    sent_count INTEGER NOT NULL DEFAULT 0,
+                    destination TEXT,
+                    message TEXT,
+                    detail_json TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_watch_events_user ON watch_events(user_id, created_at DESC)"
+            )
             _seed_plans(conn)
             conn.commit()
         finally:
@@ -1842,5 +1866,124 @@ def delete_plan(plan_id: str) -> None:
             if cur.rowcount == 0:
                 raise AppError("پلن پیدا نشد.")
             conn.commit()
+        finally:
+            conn.close()
+
+
+WATCH_EVENT_KEEP = 200
+
+
+def _watch_event_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    detail = {}
+    raw = row["detail_json"] if "detail_json" in row.keys() else None
+    if raw:
+        try:
+            detail = json.loads(raw)
+        except json.JSONDecodeError:
+            detail = {}
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "filter_id": row["filter_id"] or "",
+        "filter_name": row["filter_name"] or "",
+        "platform": row["platform"] or "divar",
+        "channel": row["channel"] or "telegram",
+        "action": row["action"],
+        "status": row["status"],
+        "found_count": int(row["found_count"] or 0),
+        "new_count": int(row["new_count"] or 0),
+        "sent_count": int(row["sent_count"] or 0),
+        "destination": row["destination"] or "",
+        "message": row["message"] or "",
+        "detail": detail,
+        "created_at": row["created_at"],
+    }
+
+
+def log_watch_event(
+    user_id: str,
+    *,
+    action: str,
+    status: str,
+    filter_id: str | None = None,
+    filter_name: str | None = None,
+    platform: str = "divar",
+    channel: str = "telegram",
+    found_count: int = 0,
+    new_count: int = 0,
+    sent_count: int = 0,
+    destination: str | None = None,
+    message: str = "",
+    detail: dict[str, Any] | None = None,
+    keep: int = WATCH_EVENT_KEEP,
+) -> dict[str, Any]:
+    event_id = uuid.uuid4().hex[:12]
+    now = _now()
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO watch_events (
+                    id, user_id, filter_id, filter_name, platform, channel,
+                    action, status, found_count, new_count, sent_count,
+                    destination, message, detail_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    user_id,
+                    filter_id,
+                    filter_name or "",
+                    platform or "divar",
+                    channel or "telegram",
+                    action,
+                    status,
+                    int(found_count or 0),
+                    int(new_count or 0),
+                    int(sent_count or 0),
+                    destination or "",
+                    (message or "")[:500],
+                    json.dumps(detail or {}, ensure_ascii=False),
+                    now,
+                ),
+            )
+            # Keep only the newest N events per user.
+            conn.execute(
+                """
+                DELETE FROM watch_events
+                WHERE user_id = ?
+                  AND id NOT IN (
+                    SELECT id FROM watch_events
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC, rowid DESC
+                    LIMIT ?
+                  )
+                """,
+                (user_id, user_id, max(20, int(keep or WATCH_EVENT_KEEP))),
+            )
+            conn.commit()
+            row = conn.execute("SELECT * FROM watch_events WHERE id = ?", (event_id,)).fetchone()
+            return _watch_event_from_row(row)  # type: ignore[return-value]
+        finally:
+            conn.close()
+
+
+def list_watch_events(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    with _lock:
+        conn = connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM watch_events
+                WHERE user_id = ?
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT ?
+                """,
+                (user_id, max(1, min(int(limit or 50), 200))),
+            ).fetchall()
+            return [_watch_event_from_row(row) for row in rows]  # type: ignore[misc]
         finally:
             conn.close()

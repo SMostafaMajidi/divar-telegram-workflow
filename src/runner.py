@@ -150,7 +150,24 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
         user = bundle["user"]
         max_age = user_poll_interval_minutes(user, config)
         for spec in bundle["filters"]:
-            listings = collect_listings([spec])
+            filter_id = str(spec.get("id") or "")
+            filter_name = str(spec.get("name") or filter_id)
+            try:
+                listings = collect_listings([spec])
+            except Exception as exc:
+                db.log_watch_event(
+                    user["id"],
+                    action="scan",
+                    status="failure",
+                    filter_id=filter_id,
+                    filter_name=filter_name,
+                    platform="divar",
+                    channel="telegram",
+                    message=f"جستجو ناموفق: {exc}",
+                    detail={"error": str(exc)},
+                )
+                continue
+
             found += len(listings)
             newest = [
                 item
@@ -159,18 +176,84 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
             ]
             newest_count += len(newest)
             chat_id = destination_chat_id(user, spec)
-            if not chat_id:
-                continue
             fresh = [
                 item
                 for item in newest
-                if not db.is_seen(user["id"], str(spec["id"]), item.token)
+                if not db.is_seen(user["id"], filter_id, item.token)
             ]
+
+            if not chat_id:
+                db.log_watch_event(
+                    user["id"],
+                    action="scan",
+                    status="skipped",
+                    filter_id=filter_id,
+                    filter_name=filter_name,
+                    platform="divar",
+                    channel="telegram",
+                    found_count=len(listings),
+                    new_count=len(fresh),
+                    message="مقصد تلگرام تنظیم نشده؛ ارسال رد شد.",
+                )
+                continue
+
+            db.log_watch_event(
+                user["id"],
+                action="scan",
+                status="success",
+                filter_id=filter_id,
+                filter_name=filter_name,
+                platform="divar",
+                channel="telegram",
+                found_count=len(listings),
+                new_count=len(fresh),
+                destination=chat_id,
+                message=(
+                    f"جستجو: {len(listings)} آگهی · تازه: {len(fresh)}"
+                    if fresh
+                    else f"جستجو: {len(listings)} آگهی · آگهی تازه نبود"
+                ),
+            )
+
+            delivered = 0
+            failed = 0
+            last_error = ""
             for item in fresh:
-                notifier.send_listing(item, chat_id=chat_id)
-                db.cache_listing(user["id"], str(spec["id"]), item.to_dict())
-            db.mark_seen(user["id"], str(spec["id"]), [item.token for item in fresh])
-            sent += len(fresh)
+                try:
+                    notifier.send_listing(item, chat_id=chat_id)
+                    db.cache_listing(user["id"], filter_id, item.to_dict())
+                    delivered += 1
+                except Exception as exc:
+                    failed += 1
+                    last_error = str(exc)
+            db.mark_seen(user["id"], filter_id, [item.token for item in fresh])
+            sent += delivered
+
+            if fresh:
+                if failed and not delivered:
+                    status = "failure"
+                    message = f"ارسال ناموفق ({failed}): {last_error}"
+                elif failed:
+                    status = "partial"
+                    message = f"ارسال جزئی: {delivered} موفق · {failed} ناموفق"
+                else:
+                    status = "success"
+                    message = f"ارسال موفق: {delivered} آگهی"
+                db.log_watch_event(
+                    user["id"],
+                    action="deliver",
+                    status=status,
+                    filter_id=filter_id,
+                    filter_name=filter_name,
+                    platform="divar",
+                    channel="telegram",
+                    found_count=len(listings),
+                    new_count=len(fresh),
+                    sent_count=delivered,
+                    destination=chat_id,
+                    message=message,
+                    detail={"failed": failed, "error": last_error} if failed else {},
+                )
     return {
         "sent": sent,
         "found": found,

@@ -407,6 +407,9 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 if len(parts) == 5 and parts[4] == "invoices":
                     return self._json({"invoices": db.list_user_invoices(user_id, limit=50)})
+                if len(parts) == 5 and parts[4] == "watch-events":
+                    limit = int((query.get("limit") or ["50"])[0])
+                    return self._json({"events": db.list_watch_events(user_id, limit=limit)})
                 raise AppError("Not found.")
             if path == "/api/me":
                 user = self._require_user()

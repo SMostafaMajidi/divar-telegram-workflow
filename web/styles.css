@@ -1179,6 +1179,22 @@ select[multiple] { min-height: 120px; }
 }
 
 .invoice-list { display: grid; gap: 10px; margin-top: 12px; }
+.watch-log-list { display: grid; gap: 8px; margin-top: 10px; }
+.watch-log-item {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.watch-log-item.failure {
+  border-color: rgba(255, 120, 120, 0.35);
+}
+.watch-log-item.partial {
+  border-color: rgba(255, 190, 90, 0.35);
+}
+.watch-log-item.skipped {
+  opacity: 0.78;
+}
 .invoice-card {
   border: 1px solid var(--line);
   border-radius: 16px;

@@ -1,4 +1,4 @@
-const state = { user: null, filters: [], chats: [], plans: [], invoices: [] };
+const state = { user: null, filters: [], chats: [], plans: [], invoices: [], watchEvents: [] };
 const userId = location.pathname.split("/").filter(Boolean).pop();
 
 const INVOICE_STATUS = {
@@ -8,6 +8,16 @@ const INVOICE_STATUS = {
   rejected: "رد شده",
   cancelled: "لغو شده",
 };
+
+const WATCH_ACTION = { scan: "جستجو", deliver: "ارسال" };
+const WATCH_STATUS = {
+  success: "موفق",
+  failure: "ناموفق",
+  partial: "جزئی",
+  skipped: "رد شده",
+};
+const WATCH_CHANNEL = { telegram: "تلگرام", email: "ایمیل", sms: "پیامک" };
+const WATCH_PLATFORM = { divar: "دیوار" };
 
 const els = {
   title: $("#page-title"),
@@ -23,6 +33,8 @@ const els = {
   refreshChats: $("#refresh-chats-btn"),
   paymentList: $("#payment-list"),
   refreshPayments: $("#refresh-payments-btn"),
+  watchList: $("#watch-list"),
+  refreshWatch: $("#refresh-watch-btn"),
   slotHint: $("#slot-hint"),
   rotate: $("#rotate-btn"),
   feed: $("#feed-link"),
@@ -300,6 +312,44 @@ function renderPayments() {
   });
 }
 
+function renderWatchLog() {
+  if (!els.watchList) return;
+  els.watchList.replaceChildren();
+  if (!state.watchEvents.length) {
+    els.watchList.append(
+      Object.assign(document.createElement("p"), {
+        className: "empty",
+        textContent: "هنوز رویدادی از پایش ثبت نشده.",
+      }),
+    );
+    return;
+  }
+  for (const ev of state.watchEvents) {
+    const row = document.createElement("article");
+    const statusClass =
+      ev.status === "success" ? "ok" : ev.status === "failure" || ev.status === "skipped" ? "warn" : "";
+    row.className = `watch-log-item ${ev.status || ""}`;
+    const when =
+      typeof formatJalali === "function" ? formatJalali(ev.created_at, { withTime: true }) : ev.created_at || "";
+    const counts = [];
+    if (ev.action === "scan" || ev.found_count) counts.push(`یافت ${ev.found_count || 0}`);
+    if (ev.new_count) counts.push(`تازه ${ev.new_count}`);
+    if (ev.sent_count) counts.push(`ارسال ${ev.sent_count}`);
+    row.innerHTML = `
+      <div class="card-top">
+        <div>
+          <strong>${WATCH_ACTION[ev.action] || ev.action} · ${ev.filter_name || "فیلتر"}</strong>
+          <p class="meta">${WATCH_PLATFORM[ev.platform] || ev.platform} → ${WATCH_CHANNEL[ev.channel] || ev.channel}${counts.length ? ` · ${counts.join(" · ")}` : ""}</p>
+          <p class="meta">${ev.message || "—"}</p>
+          <p class="meta">${when}${ev.destination ? ` · مقصد: <span dir="ltr">${ev.destination}</span>` : ""}</p>
+        </div>
+        <span class="pill ${statusClass}">${WATCH_STATUS[ev.status] || ev.status}</span>
+      </div>
+    `;
+    els.watchList.append(row);
+  }
+}
+
 function render() {
   const user = state.user;
   if (!user) return;
@@ -356,6 +406,7 @@ function render() {
   els.apiKey.textContent = user.api_key ? `API key: ${user.api_key}` : "کلید API هنوز ساخته نشده.";
   renderRoutes();
   renderPayments();
+  renderWatchLog();
 }
 
 async function loadRoutes() {
@@ -372,6 +423,12 @@ async function loadPayments() {
   const data = await api(`/api/admin/users/${userId}/invoices`);
   state.invoices = data.invoices || [];
   renderPayments();
+}
+
+async function loadWatchLog() {
+  const data = await api(`/api/admin/users/${userId}/watch-events?limit=80`);
+  state.watchEvents = data.events || [];
+  renderWatchLog();
 }
 
 els.tabs?.addEventListener("click", (e) => {
@@ -483,6 +540,15 @@ els.refreshPayments?.addEventListener("click", async () => {
   }
 });
 
+els.refreshWatch?.addEventListener("click", async () => {
+  try {
+    await loadWatchLog();
+    toast(state.watchEvents.length ? `${state.watchEvents.length} رویداد` : "رویدادی نیست", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+});
+
 els.rotate.onclick = async () => {
   if (!confirm("کلید API جدید ساخته شود؟ کلید قبلی از کار می‌افتد.")) return;
   try {
@@ -514,7 +580,7 @@ async function boot() {
   bindLogout();
   bindJalaliPickers();
   const initial = (location.hash || "").replace("#", "") || "account";
-  setTab(["account", "plan", "poll", "routes", "payments", "more"].includes(initial) ? initial : "account");
+  setTab(["account", "plan", "poll", "routes", "payments", "watch", "more"].includes(initial) ? initial : "account");
   if (!userId) {
     toast("شناسه مشتری نامعتبر است", "err");
     return;
@@ -526,7 +592,7 @@ async function boot() {
     ]);
     state.user = data.user;
     state.plans = plans.plans || [];
-    await Promise.all([loadRoutes(), loadPayments()]);
+    await Promise.all([loadRoutes(), loadPayments(), loadWatchLog()]);
     render();
   } catch (err) {
     toast(err.message, "err");
