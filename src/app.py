@@ -679,6 +679,33 @@ class Handler(BaseHTTPRequestHandler):
                         "next_watch_at": WATCHER.next_run_at or None,
                     }
                 )
+            if path == "/api/admin/broadcast":
+                self._require_admin()
+                from messengers import admin_broadcast, bale_announcement_text, collect_broadcast_targets
+
+                text = str(body.get("text") or "").strip()
+                if body.get("preset") == "bale_announcement" and not text:
+                    text = bale_announcement_text()
+                scope = str(body.get("scope") or "private").strip().lower() or "private"
+                channels = body.get("channels")
+                if isinstance(channels, str):
+                    channels = [c.strip() for c in channels.split(",") if c.strip()]
+                if not isinstance(channels, list):
+                    channels = None
+                if body.get("dry_run"):
+                    targets = collect_broadcast_targets(scope=scope, channels=channels)
+                    return self._json(
+                        {
+                            "ok": True,
+                            "dry_run": True,
+                            "total": len(targets),
+                            "targets": targets,
+                            "text": text,
+                        }
+                    )
+                return self._json(
+                    admin_broadcast(text, scope=scope, channels=channels)
+                )
             if path == "/api/logout":
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")

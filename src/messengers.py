@@ -286,3 +286,142 @@ def public_messenger_payload(user: dict[str, Any] | None = None) -> list[dict[st
 # Aliases matching plan naming
 TelegramMessenger = TelegramBotClient
 BaleMessenger = BaleBotClient
+
+
+def collect_broadcast_targets(
+    *,
+    scope: str = "private",
+    channels: list[str] | None = None,
+    active_only: bool = True,
+) -> list[dict[str, str]]:
+    """Collect chat destinations for admin broadcast.
+
+    scope:
+      - private: linked messenger accounts (+ legacy telegram_chat_id)
+      - all: every discovered user chat (private/group/channel)
+    """
+    import db
+
+    wanted = {str(c).strip().lower() for c in (channels or []) if str(c).strip()}
+    scope_key = str(scope or "private").strip().lower()
+    if scope_key not in {"private", "all"}:
+        raise AppError("scope باید private یا all باشد.")
+    out: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(channel: str, chat_id: str, *, user_id: str, label: str = "") -> None:
+        ch = str(channel or "").strip().lower() or "telegram"
+        cid = str(chat_id or "").strip()
+        if not cid:
+            return
+        if wanted and ch not in wanted:
+            return
+        key = (ch, cid)
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(
+            {
+                "channel": ch,
+                "chat_id": cid,
+                "user_id": user_id,
+                "label": label,
+            }
+        )
+
+    for user in db.list_users():
+        if active_only and not user.get("active"):
+            continue
+        uid = str(user["id"])
+        if scope_key == "private":
+            for acc in user.get("messenger_accounts") or []:
+                add(
+                    str(acc.get("channel") or "telegram"),
+                    str(acc.get("account_id") or ""),
+                    user_id=uid,
+                    label=str(acc.get("display_name") or acc.get("username") or "خصوصی"),
+                )
+            tg = str(user.get("telegram_chat_id") or "").strip()
+            if tg:
+                add("telegram", tg, user_id=uid, label="تلگرام خصوصی")
+        else:
+            for chat in db.list_user_chats(uid):
+                add(
+                    str(chat.get("channel") or "telegram"),
+                    str(chat.get("id") or ""),
+                    user_id=uid,
+                    label=str(chat.get("name") or chat.get("username") or chat.get("type") or ""),
+                )
+    return out
+
+
+def admin_broadcast(
+    text: str,
+    *,
+    scope: str = "private",
+    channels: list[str] | None = None,
+    active_only: bool = True,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    message = str(text or "").strip()
+    if not message:
+        raise AppError("متن پیام خالی است.")
+    if len(message) > 3500:
+        raise AppError("متن پیام خیلی طولانی است (حداکثر حدود ۳۵۰۰ کاراکتر).")
+    targets = collect_broadcast_targets(scope=scope, channels=channels, active_only=active_only)
+    if not targets:
+        raise AppError("هیچ مقصدی برای ارسال پیدا نشد.")
+    config = config or load_config()
+    clients: dict[str, MessengerClient] = {}
+    sent = 0
+    failed = 0
+    details: list[dict[str, Any]] = []
+    for dest in targets:
+        channel = dest["channel"]
+        chat_id = dest["chat_id"]
+        try:
+            if channel not in clients:
+                clients[channel] = build_messenger(channel, config)
+            clients[channel].send_text(message, chat_id=chat_id)
+            sent += 1
+            details.append({**dest, "status": "ok"})
+        except Exception as exc:
+            failed += 1
+            details.append({**dest, "status": "error", "error": str(exc)})
+    return {
+        "ok": True,
+        "sent": sent,
+        "failed": failed,
+        "total": len(targets),
+        "scope": scope,
+        "channels": sorted({d["channel"] for d in targets}),
+        "details": details,
+        "message": f"ارسال گروهی: {sent} موفق · {failed} ناموفق از {len(targets)} مقصد",
+    }
+
+
+def bale_announcement_text() -> str:
+    """Default announcement when Bale bot is enabled."""
+    link = ""
+    username = ""
+    for item in messenger_configs():
+        if item["channel"] == "bale":
+            link = item.get("deep_link") or ""
+            username = item.get("bot_username") or ""
+            break
+    if not link and username:
+        link = f"https://ble.ir/{username}?start=link"
+    if not link:
+        link = "https://ble.ir/divar_watcher_bot?start=link"
+    return (
+        "ربات بله هم اضافه شد ✅\n\n"
+        "از این به بعد می‌توانید آگهی‌های دیوار را علاوه بر تلگرام، در بله هم دریافت کنید.\n\n"
+        f"لینک اتصال بازوی بله:\n{link}\n\n"
+        "طریقه استفاده:\n"
+        "۱) وارد پنل وب شوید\n"
+        "۲) در بخش «پیام‌رسان‌ها» روی بله بزنید و بازو را استارت/لاگین کنید "
+        "(همان یوزرنیم و رمز پنل)\n"
+        "۳) فیلتر را ویرایش کنید → پیام‌رسان بله را انتخاب کنید → چت را اضافه کنید → ذخیره\n\n"
+        "یک فیلتر می‌تواند همزمان به چند چت در تلگرام و بله پیام بفرستد.\n"
+        "اگر سوالی بود از پشتیبانی بپرسید."
+    )

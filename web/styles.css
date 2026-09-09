@@ -1388,6 +1388,26 @@ textarea {
   }
 }
 
+.broadcast-box {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+.broadcast-box textarea {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+  font-family: inherit;
+}
+.broadcast-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .broadcast-row { grid-template-columns: 1fr; }
+}
+
 .nav-menu {
   position: relative;
 }

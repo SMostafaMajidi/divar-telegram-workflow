@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ادمین — دیوار واچر</title>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=dark4">
+  <link rel="stylesheet" href="/styles.css?v=dark6">
 </head>
 <body>
   <header class="topbar">
@@ -63,9 +63,44 @@
 
       <div id="user-list" class="user-summary-list"></div>
     </section>
+
+    <section class="panel" style="margin-top:14px">
+      <div class="panel-head">
+        <div>
+          <h2>ارسال گروهی</h2>
+          <p class="meta" style="margin:4px 0 0">پیام برای چت‌های لینک‌شده مشتریان (تلگرام / بله)</p>
+        </div>
+      </div>
+      <form id="broadcast-form" class="broadcast-box">
+        <label>متن پیام
+          <textarea id="broadcast-text" rows="8" required placeholder="متن اعلامیه…"></textarea>
+        </label>
+        <div class="broadcast-row">
+          <label>مقصدها
+            <select id="broadcast-scope">
+              <option value="private">فقط چت خصوصی حساب‌های لینک‌شده</option>
+              <option value="all">همه چت‌های کشف‌شده (گروه/کانال هم)</option>
+            </select>
+          </label>
+          <label>پیام‌رسان
+            <select id="broadcast-channels">
+              <option value="">همه پیام‌رسان‌های فعال</option>
+              <option value="telegram">فقط تلگرام</option>
+              <option value="bale">فقط بله</option>
+            </select>
+          </label>
+        </div>
+        <p id="broadcast-hint" class="meta"></p>
+        <div class="create-actions">
+          <button id="broadcast-preview" class="ghost small" type="button">شمارش مقصدها</button>
+          <button id="broadcast-bale-preset" class="ghost small" type="button">متن آمادهٔ بله</button>
+          <button class="primary small" type="submit">ارسال گروهی</button>
+        </div>
+      </form>
+    </section>
   </main>
   <script src="/dates.js?v=1"></script>
   <script src="/admin-common.js?v=2"></script>
-  <script src="/admin.js?v=8"></script>
+  <script src="/admin.js?v=9"></script>
 </body>
 </html>
