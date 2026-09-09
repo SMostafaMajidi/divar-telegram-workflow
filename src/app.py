@@ -4,6 +4,7 @@ import json
 import mimetypes
 import re
 import threading
+import time
 import traceback
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -76,14 +77,22 @@ class Watcher:
             users = self._watchable_users()
             due, wait, when = next_due_watch_users(users, include_now=include_now)
             include_now = False
-            if wait > 0.5:
+            if wait > 0:
                 self.next_run_at = format_slot_time(when)
                 self.last_message = f"Next scan at {self.next_run_at}."
-                # Sleep in short chunks so admin poll changes take effect soon.
-                chunk = min(float(wait), 15.0)
-                if self._stop.wait(chunk):
+                # Sleep toward a fixed deadline. Do NOT recompute wait with
+                # include_now=False after landing on the slot — that skips it.
+                deadline = time.monotonic() + float(wait)
+                while not self._stop.is_set():
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        break
+                    if self._stop.wait(min(left, 15.0)):
+                        return
+                if self._stop.is_set():
                     break
-                continue
+                users = self._watchable_users()
+                due, _, when = next_due_watch_users(users, include_now=True)
             if not due:
                 if self._stop.wait(5.0):
                     break
