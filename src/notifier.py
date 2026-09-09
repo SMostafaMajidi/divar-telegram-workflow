@@ -184,3 +184,37 @@ def format_listing(listing: Listing, rank: int | None = None, reason: str | None
         lines.append(f"🧠 {html.escape(reason)}")
     lines.append(f'🔗 <a href="{html.escape(listing.url, quote=True)}">مشاهده در دیوار</a>')
     return "\n".join(lines)
+
+
+def _escape_bale_md(text: str) -> str:
+    """Escape characters that affect Bale's always-on Markdown parsing."""
+    out = str(text or "")
+    for ch in ("\\", "*", "_", "[", "]", "(", ")"):
+        out = out.replace(ch, f"\\{ch}")
+    return out
+
+
+def format_listing_bale(listing: Listing, rank: int | None = None, reason: str | None = None) -> str:
+    """Bale formats every message as Markdown (not Telegram HTML)."""
+    title = _escape_bale_md(listing.title)
+    if rank is not None:
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        prefix = medals.get(rank, f"{rank}.")
+        lines = [f"{prefix} *{title}*"]
+    else:
+        lines = [f"🚗 *{title}*"]
+    lines.append(f"🔎 {_escape_bale_md(listing.filter_name)}")
+    if listing.price:
+        lines.append(f"💰 {_escape_bale_md(listing.price)}")
+    if listing.mileage:
+        lines.append(f"🛣️ {_escape_bale_md(listing.mileage)}")
+    if listing.location:
+        lines.append(f"📍 {_escape_bale_md(listing.location)}")
+    if reason:
+        lines.append(f"🧠 {_escape_bale_md(reason)}")
+    # Bale markdown link: [text](url) — also keep bare URL as fallback auto-link.
+    url = str(listing.url or "").strip()
+    if url:
+        lines.append(f"🔗 [مشاهده در دیوار]({url})")
+        lines.append(url)
+    return "\n".join(lines)

@@ -131,12 +131,63 @@ class TelegramBotClient(TelegramNotifier):
 
 
 class BaleBotClient(TelegramBotClient):
-    """Bale uses a Telegram-compatible Bot API."""
+    """Bale Bot API is Telegram-like, but text is always Markdown (not HTML)."""
 
     channel = "bale"
     api_template = BALE_API
     deep_link_base = "https://ble.ir/{username}"
 
+    def send_listing(
+        self,
+        listing: Listing,
+        rank: int | None = None,
+        reason: str | None = None,
+        chat_id: str | None = None,
+    ) -> None:
+        from notifier import format_listing_bale
+
+        caption = format_listing_bale(listing, rank=rank, reason=reason)
+        target = str(chat_id or self.chat_id)
+        if self.send_photos and listing.image_url:
+            try:
+                self._call(
+                    "sendPhoto",
+                    {
+                        "chat_id": target,
+                        "photo": listing.image_url,
+                        "caption": caption[:1024],
+                    },
+                )
+                return
+            except requests.HTTPError:
+                pass
+        self._call(
+            "sendMessage",
+            {
+                "chat_id": target,
+                "text": caption,
+            },
+        )
+
+    def send_text(
+        self,
+        text: str,
+        reply_markup: dict[str, Any] | None = None,
+        chat_id: str | None = None,
+    ) -> None:
+        import re
+
+        # Drop Telegram HTML tags; keep inner text. Bare URLs remain clickable.
+        cleaned = re.sub(r"<br\s*/?>", "\n", str(text or ""), flags=re.I)
+        cleaned = re.sub(r"</?a\b[^>]*>", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"</?[^>]+>", "", cleaned)
+        payload: dict[str, Any] = {
+            "chat_id": str(chat_id or self.chat_id),
+            "text": cleaned,
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        self._call("sendMessage", payload)
 
 def messenger_env_token(channel: str) -> str:
     ch = str(channel or "").strip().lower()
