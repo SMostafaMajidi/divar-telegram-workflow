@@ -34,7 +34,27 @@ async function api(path, options = {}) {
 }
 
 function renderPay(payment) {
-  renderBankCard(payInfo, payment || {});
+  payInfo.innerHTML = `<h3>پرداخت کارت‌به‌کارت</h3><div id="bank-card-mount"></div>`;
+  renderBankCard(document.getElementById("bank-card-mount"), payment || {});
+}
+
+function receiptDropHtml(inv) {
+  const inputId = `receipt-${inv.id}`;
+  return `<div class="receipt-upload">
+    <p class="pay-steps">۱) مبلغ را به کارت بالا واریز کنید و شناسه واریز را در توضیحات بنویسید &nbsp;·&nbsp; ۲) تصویر رسید را بارگذاری کنید</p>
+    <label class="receipt-drop" data-drop for="${inputId}">
+      <input id="${inputId}" type="file" data-file accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf">
+      <span class="receipt-drop-icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </span>
+      <span class="receipt-drop-title" data-drop-title>برای انتخاب فایل کلیک کنید یا اینجا رها کنید</span>
+      <span class="receipt-drop-hint">JPG، PNG، WEBP یا PDF</span>
+      <img class="receipt-preview-img" data-drop-preview alt="" hidden>
+    </label>
+    <input data-note placeholder="توضیح اختیاری" value="${inv.payer_note || ""}">
+    <button class="primary small" type="button" data-paid="${inv.id}">ثبت رسید و ارسال برای بررسی</button>
+    <p class="hint">فیش را اینجا آپلود کنید؛ نیازی به ارسال در تلگرام نیست.</p>
+  </div>`;
 }
 
 function renderInvoices(invoices) {
@@ -51,37 +71,30 @@ function renderInvoices(invoices) {
     const receiptLink = inv.has_receipt
       ? `<p class="meta"><a href="/api/invoices/${inv.id}/receipt" target="_blank" rel="noreferrer">مشاهده فیش آپلودشده</a></p>`
       : "";
-    const actions = canUpload
-      ? `<div class="receipt-upload">
-          <label class="meta">فیش واریز (عکس یا PDF)
-            <input type="file" data-file accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf">
-          </label>
-          <input data-note placeholder="توضیح اختیاری" value="${inv.payer_note || ""}">
-          <button class="primary small" type="button" data-paid="${inv.id}">ارسال فیش برای تأیید</button>
-          <p class="hint">فیش را اینجا آپلود کنید؛ نیازی به ارسال در تلگرام نیست.</p>
-        </div>`
-      : "";
     card.innerHTML = `
-      <div class="card-top">
-        <div>
-          <h3>${inv.plan_name}</h3>
-          <p class="meta">${inv.amount_label} · شناسه واریز: <b dir="ltr">${inv.ref_code}</b></p>
+      <div class="pay-amount-box">
+        <span class="pay-amount-label">${inv.plan_name}</span>
+        <strong class="pay-amount-value">${inv.amount_label}</strong>
+        <div class="pay-amount-meta">
+          <span>شناسه واریز: <b dir="ltr">${inv.ref_code}</b></span>
+          <span class="pill ${inv.status === "paid" ? "ok" : inv.status === "rejected" ? "warn" : ""}">${STATUS[inv.status] || inv.status}</span>
         </div>
-        <span class="pill ${inv.status === "paid" ? "ok" : inv.status === "rejected" ? "warn" : ""}">${STATUS[inv.status] || inv.status}</span>
       </div>
-      <p class="meta">مبلغ را کارت‌به‌کارت کنید و شناسه واریز را در توضیحات بنویسید، بعد فیش را آپلود کنید.</p>
       ${receiptLink}
-      ${actions}
+      ${canUpload ? receiptDropHtml(inv) : ""}
     `;
     list.append(card);
+    if (canUpload) {
+      const drop = card.querySelector("[data-drop]");
+      bindReceiptDrop(drop);
+    }
   }
   list.querySelectorAll("[data-paid]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.paid;
       const wrap = btn.closest(".invoice-card");
       const note = wrap.querySelector("[data-note]")?.value || "";
-      const fileInput = wrap.querySelector("[data-file]");
-      const file = fileInput?.files?.[0];
+      const file = pickedReceiptFile(wrap);
       if (!file) {
         toast("فیش واریز را انتخاب کنید", "err");
         return;
@@ -98,7 +111,7 @@ function renderInvoices(invoices) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "خطا");
-        toast("فیش ثبت شد؛ منتظر تأیید ادمین بمانید.", "ok");
+        toast("رسید ثبت شد؛ منتظر تأیید ادمین بمانید.", "ok");
         await boot();
       } catch (err) {
         toast(err.message, "err");

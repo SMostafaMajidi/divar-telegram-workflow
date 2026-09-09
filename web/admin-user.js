@@ -27,6 +27,70 @@ function chatLabel(chat) {
   return kind ? `${name} · ${kind}` : String(name);
 }
 
+function priceText(filter) {
+  const min = filter.price_min_million;
+  const max = filter.price_max_million;
+  if (min == null && max == null) return "بدون محدودیت قیمت";
+  if (min != null && max != null) return `${min} تا ${max} میلیون`;
+  if (min != null) return `از ${min} میلیون`;
+  return `تا ${max} میلیون`;
+}
+
+function formatFieldValue(value) {
+  if (value == null || value === "") return "—";
+  if (typeof value === "boolean") return value ? "بله" : "خیر";
+  if (Array.isArray(value)) return value.length ? value.map(String).join("، ") : "—";
+  if (typeof value === "object") {
+    const min = value.min ?? value.minimum ?? value.from;
+    const max = value.max ?? value.maximum ?? value.to;
+    if (min != null || max != null) {
+      if (min != null && max != null) return `${min} تا ${max}`;
+      if (min != null) return `از ${min}`;
+      return `تا ${max}`;
+    }
+    try {
+      return JSON.stringify(value);
+    } catch (_) {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function fieldLabel(key) {
+  const map = {
+    price: "قیمت",
+    year: "سال",
+    mileage: "کارکرد",
+    chassis_status: "وضعیت شاسی",
+    body_status: "وضعیت بدنه",
+    color: "رنگ",
+    brand_model: "برند/مدل",
+    motor_status: "وضعیت موتور",
+  };
+  return map[key] || key;
+}
+
+function filterDetailRows(filter) {
+  const rows = [
+    ["وضعیت", filter.enabled ? "فعال" : "غیرفعال"],
+    ["دسته", filter.category_path || filter.category_name || filter.category || "—"],
+    ["عبارت جستجو", filter.query || "—"],
+    ["شهرها", (filter.cities || []).join("، ") || "—"],
+    ["قیمت", priceText(filter)],
+    ["حذف از عنوان", (filter.exclude_title || []).join("، ") || "—"],
+    ["صفحات جستجو", filter.max_pages != null ? String(filter.max_pages) : "—"],
+  ];
+  const fields = filter.fields && typeof filter.fields === "object" ? filter.fields : {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (key === "price") continue; // already shown via price_min/max
+    const text = formatFieldValue(value);
+    if (text === "—") continue;
+    rows.push([fieldLabel(key), text]);
+  }
+  return rows;
+}
+
 function parseExpiryInput(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -119,16 +183,38 @@ function renderRoutes() {
     });
 
     const row = document.createElement("article");
-    row.className = "route-card";
+    row.className = `route-card filter-detail-card ${filter.enabled ? "" : "off"}`;
+
+    const head = document.createElement("div");
+    head.className = "card-top";
     const title = document.createElement("strong");
     title.textContent = filter.name || filter.id;
-    const meta = document.createElement("p");
-    meta.className = "meta";
-    meta.textContent = filter.enabled ? "فعال" : "غیرفعال";
+    const pill = document.createElement("span");
+    pill.className = `pill ${filter.enabled ? "ok" : "warn"}`;
+    pill.textContent = filter.enabled ? "فعال" : "غیرفعال";
+    head.append(title, pill);
+
+    const dl = document.createElement("dl");
+    dl.className = "filter-detail-grid";
+    for (const [labelText, valueText] of filterDetailRows(filter)) {
+      const item = document.createElement("div");
+      const dt = document.createElement("dt");
+      dt.textContent = labelText;
+      const dd = document.createElement("dd");
+      dd.textContent = valueText;
+      item.append(dt, dd);
+      dl.append(item);
+    }
+
     const label = document.createElement("label");
     label.className = "chat-target";
     label.append("ارسال به", select);
-    row.append(title, meta, label);
+
+    const idMeta = document.createElement("p");
+    idMeta.className = "meta mono";
+    idMeta.textContent = `شناسه فیلتر: ${filter.id}`;
+
+    row.append(head, dl, label, idMeta);
     els.routeList.append(row);
   }
 }

@@ -432,11 +432,15 @@ def payment_info() -> dict[str, Any]:
     load_dotenv()
     card = (os.getenv("PAYMENT_CARD_NUMBER") or "").strip()
     holder = (os.getenv("PAYMENT_CARD_HOLDER") or "").strip()
+    bank = (os.getenv("PAYMENT_BANK_NAME") or "").strip()
+    sheba = (os.getenv("PAYMENT_SHEBA") or "").strip().replace(" ", "").upper()
     support = (os.getenv("SUPPORT_TELEGRAM") or "").strip().lstrip("@")
     note = (os.getenv("PAYMENT_NOTE") or "").strip()
     return {
         "card_number": card,
         "card_holder": holder,
+        "bank_name": bank,
+        "sheba": sheba,
         "support_telegram": support,
         "support_url": f"https://t.me/{support}" if support else "",
         "note": note

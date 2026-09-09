@@ -418,6 +418,39 @@ code {
   background: rgba(255, 255, 255, 0.03);
 }
 .route-card strong { font-size: 15px; }
+.route-card.off { opacity: 0.72; }
+.filter-detail-card .card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+.filter-detail-grid {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+.filter-detail-grid > div {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.filter-detail-grid dt {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.filter-detail-grid dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  word-break: break-word;
+}
 .tool-block {
   display: grid;
   gap: 8px;
@@ -928,57 +961,127 @@ select[multiple] { min-height: 120px; }
   gap: 8px;
 }
 .pay-box h3 { margin: 0; font-size: 16px; }
+.payment-page { overflow: visible; }
+
+.pay-amount-box {
+  text-align: center;
+  padding: 18px 14px;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(61, 214, 198, 0.16), transparent 45%),
+    linear-gradient(160deg, rgba(61, 214, 198, 0.08), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+.pay-amount-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.pay-amount-value {
+  font-size: clamp(22px, 5vw, 30px);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.pay-amount-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 14px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.pay-steps {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.7;
+}
 
 .bank-card {
   position: relative;
-  width: min(100%, 380px);
-  aspect-ratio: 1.586;
+  width: min(100%, 420px);
+  min-height: 210px;
+  margin: 0 auto;
   border-radius: 18px;
   padding: 22px 22px 18px;
   color: #f4f7fb;
   background:
-    radial-gradient(circle at 12% 20%, rgba(255, 255, 255, 0.2), transparent 42%),
-    linear-gradient(135deg, #1b3a4b 0%, #0f766e 48%, #134e4a 100%);
+    radial-gradient(circle at 85% 15%, rgba(201, 154, 70, 0.28), transparent 40%),
+    linear-gradient(135deg, #0B3D3C 0%, #146B67 48%, #0F4B49 100%);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
   display: grid;
-  align-content: end;
-  gap: 6px;
+  gap: 10px;
   overflow: hidden;
 }
-.bank-card::after {
+.bank-card::before {
   content: "";
   position: absolute;
-  inset: auto -20% -40% auto;
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
+  inset: 0;
+  background:
+    radial-gradient(circle at 10% 80%, rgba(255, 255, 255, 0.08), transparent 35%),
+    radial-gradient(circle at 90% 90%, rgba(255, 255, 255, 0.06), transparent 40%);
+  pointer-events: none;
+}
+.bank-card-top,
+.bank-card-bottom,
+.bank-card-number,
+.bank-card-sheba {
+  position: relative;
+  z-index: 1;
+}
+.bank-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 .bank-card-chip {
-  position: absolute;
-  top: 22px;
-  left: 22px;
-  width: 44px;
-  height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #d6b25e, #f0d58a 55%, #b8893a);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  width: 42px;
+  height: 30px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #E8D48B, #C99A46 55%, #A97C2F);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.bank-card-bank {
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.92;
 }
 .bank-card-label {
+  display: block;
   margin: 0;
   font-size: 11px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.72;
+  opacity: 0.75;
 }
 .bank-card-number {
-  margin: 0 0 10px;
+  margin: 4px 0 8px;
   font-size: clamp(18px, 4vw, 24px);
   font-weight: 700;
   letter-spacing: 0.12em;
   font-variant-numeric: tabular-nums;
+  text-align: center;
+  direction: ltr;
+  unicode-bidi: isolate;
 }
-.bank-card-footer {
+.bank-card-sheba {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0 0 4px;
+}
+.bank-card-sheba-num {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: #fff;
+}
+.bank-card-bottom {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -988,11 +1091,13 @@ select[multiple] { min-height: 120px; }
   margin: 0;
   font-size: 14px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 .bank-card-copy {
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background: rgba(0, 0, 0, 0.18);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
   border-radius: 999px;
   padding: 8px 12px;
@@ -1000,14 +1105,64 @@ select[multiple] { min-height: 120px; }
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  backdrop-filter: blur(4px);
   z-index: 1;
 }
-.bank-card-copy:hover { background: rgba(0, 0, 0, 0.28); }
+.bank-card-copy:hover { background: rgba(255, 255, 255, 0.22); }
+.bank-card-copy.ghost-copy {
+  padding: 6px 10px;
+  font-size: 11px;
+}
 .bank-card-note { margin-top: 10px; }
 
 .receipt-upload {
   display: grid;
+  gap: 10px;
+}
+.receipt-drop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
+  padding: 24px 16px;
+  border: 1.5px dashed rgba(61, 214, 198, 0.35);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.receipt-drop:hover,
+.receipt-drop.is-dragover {
+  border-color: rgba(61, 214, 198, 0.7);
+  background: rgba(61, 214, 198, 0.08);
+}
+.receipt-drop input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+.receipt-drop-icon { color: #3dd6c6; }
+.receipt-drop-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+.receipt-drop-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.receipt-preview-img {
+  margin-top: 8px;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.2);
 }
 .receipt-preview {
   display: grid;
@@ -1030,11 +1185,17 @@ select[multiple] { min-height: 120px; }
   padding: 14px;
   background: rgba(255, 255, 255, 0.03);
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 .invoice-card .row {
   grid-template-columns: 1fr auto;
   align-items: center;
+}
+
+@media (max-width: 640px) {
+  .bank-card-number { font-size: 1.05rem; letter-spacing: 0.06em; }
+  .bank-card-bottom { flex-direction: column; align-items: stretch; }
+  .bank-card-copy { justify-content: center; }
 }
 .legal-copy {
   display: grid;
