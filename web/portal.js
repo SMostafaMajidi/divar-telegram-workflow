@@ -14,7 +14,7 @@ const DEFAULT_EXCLUDE = [
   "زنگ زدگی",
 ];
 
-const CHANNEL_LABELS = { telegram: "تلگرام", bale: "بله" };
+const CHANNEL_LABELS = { telegram: "تلگرام", bale: "بله", eitaa: "ایتا" };
 
 const state = {
   filters: [],
@@ -70,6 +70,8 @@ const els = {
   destList: $("#dest-list"),
   destChannel: $("#dest-channel"),
   destChat: $("#dest-chat"),
+  destEitaaId: $("#dest-eitaa-id"),
+  destHint: $("#dest-hint"),
   destAddBtn: $("#dest-add-btn"),
   ticketList: $("#ticket-list"),
   ticketAddBtn: $("#ticket-add-btn"),
@@ -180,9 +182,26 @@ function fillChannelSelect(select, selected) {
   else if (channels.length) select.value = channels[0];
 }
 
+function syncDestInputs() {
+  const channel = els.destChannel?.value || "telegram";
+  const isEitaa = channel === "eitaa";
+  if (els.destChat) els.destChat.hidden = isEitaa;
+  if (els.destEitaaId) els.destEitaaId.hidden = !isEitaa;
+  if (els.destHint) {
+    els.destHint.textContent = isEitaa
+      ? "ایتا فقط کانال/گروه: @sender را ادمین کنید، بعد شناسه کانال را بدون @ وارد کنید (مثل mychannel)."
+      : "اول پیام‌رسان، بعد چت. می‌توانید چند مقصد از چند پیام‌رسان اضافه کنید.";
+  }
+  if (!isEitaa) fillDestChatSelect(els.destChat, channel);
+}
+
 function fillDestChatSelect(select, channel, selected) {
   if (!select) return;
   const ch = channel || "telegram";
+  if (ch === "eitaa") {
+    syncDestInputs();
+    return;
+  }
   const matched = state.chats.filter((c) => (c.channel || "telegram") === ch);
   select.replaceChildren(
     el("option", {
@@ -201,6 +220,7 @@ function fillDestChatSelect(select, channel, selected) {
   } else if (matched.length === 1) {
     select.value = String(matched[0].id);
   }
+  syncDestInputs();
 }
 
 async function refreshMessengerState() {
@@ -254,18 +274,26 @@ function renderMessengers() {
     return;
   }
   for (const m of state.messengers) {
+    const channelOnly = m.link_mode === "channel_only" || m.channel === "eitaa";
+    const meta = channelOnly
+      ? m.linked
+        ? "کانال ثبت‌شده دارد · در مقصد فیلتر انتخاب/وارد کنید"
+        : m.hint || "فقط ارسال به کانال — شناسه را در مقصد فیلتر وارد کنید"
+      : m.linked
+        ? "متصل است · برای چت‌های بیشتر باز کنید"
+        : "برای اتصال استارت/لاگین کنید";
+    const attrs = {
+      class: `messenger-card ${m.linked ? "linked" : ""}`,
+    };
+    if (!channelOnly && m.deep_link) {
+      attrs.href = m.deep_link;
+      attrs.target = "_blank";
+      attrs.rel = "noreferrer";
+    }
     els.messengerList.append(
-      el("a", {
-        class: `messenger-card ${m.linked ? "linked" : ""}`,
-        href: m.deep_link || "#",
-        target: "_blank",
-        rel: "noreferrer",
-      }, [
+      el(channelOnly || !m.deep_link ? "div" : "a", attrs, [
         el("strong", { text: m.label }),
-        el("span", {
-          class: "meta",
-          text: m.linked ? "متصل است · برای چت‌های بیشتر باز کنید" : "برای اتصال استارت/لاگین کنید",
-        }),
+        el("span", { class: "meta", text: meta }),
       ]),
     );
   }
@@ -992,20 +1020,35 @@ els.form.addEventListener("submit", async (event) => {
 
 els.destChannel?.addEventListener("change", () => {
   fillDestChatSelect(els.destChat, els.destChannel.value);
+  syncDestInputs();
 });
 
 els.destAddBtn?.addEventListener("click", () => {
   const channel = els.destChannel?.value || "telegram";
-  const chatId = els.destChat?.value;
-  if (!chatId) {
-    toast("چت را انتخاب کنید", "err");
-    return;
+  let chatId = "";
+  if (channel === "eitaa") {
+    chatId = String(els.destEitaaId?.value || "")
+      .trim()
+      .replace(/^@+/, "")
+      .replace(/^https?:\/\/(www\.)?eitaa\.com\//i, "")
+      .replace(/\/$/, "");
+    if (!chatId) {
+      toast("شناسه کانال ایتا را وارد کنید", "err");
+      return;
+    }
+  } else {
+    chatId = els.destChat?.value;
+    if (!chatId) {
+      toast("چت را انتخاب کنید", "err");
+      return;
+    }
   }
   if (state.destinations.some((d) => destKey(d) === destKey({ channel, chat_id: chatId }))) {
     toast("این مقصد قبلاً اضافه شده", "err");
     return;
   }
   state.destinations.push({ channel, chat_id: chatId, enabled: true });
+  if (channel === "eitaa" && els.destEitaaId) els.destEitaaId.value = "";
   renderDestList();
 });
 

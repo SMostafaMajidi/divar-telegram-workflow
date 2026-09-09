@@ -1398,13 +1398,19 @@ textarea {
   font-size: 13px;
 }
 .dest-add-row {
-  display: grid;
-  grid-template-columns: 1fr 1.4fr auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
+.dest-add-row select,
+.dest-add-row input[type="text"] {
+  flex: 1 1 140px;
+  min-width: 0;
+}
 @media (max-width: 720px) {
   .dest-add-row {
+    display: grid;
     grid-template-columns: 1fr;
   }
 }

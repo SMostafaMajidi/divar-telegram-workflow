@@ -218,3 +218,27 @@ def format_listing_bale(listing: Listing, rank: int | None = None, reason: str |
         lines.append(f"🔗 [مشاهده در دیوار]({url})")
         lines.append(url)
     return "\n".join(lines)
+
+
+def format_listing_plain(listing: Listing, rank: int | None = None, reason: str | None = None) -> str:
+    """Plain text for messengers without HTML/Markdown (e.g. Eitaa)."""
+    title = str(listing.title or "")
+    if rank is not None:
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        prefix = medals.get(rank, f"{rank}.")
+        lines = [f"{prefix} {title}"]
+    else:
+        lines = [f"🚗 {title}"]
+    lines.append(f"🔎 {listing.filter_name}")
+    if listing.price:
+        lines.append(f"💰 {listing.price}")
+    if listing.mileage:
+        lines.append(f"🛣️ {listing.mileage}")
+    if listing.location:
+        lines.append(f"📍 {listing.location}")
+    if reason:
+        lines.append(f"🧠 {reason}")
+    url = str(listing.url or "").strip()
+    if url:
+        lines.append(f"🔗 {url}")
+    return "\n".join(lines)

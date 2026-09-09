@@ -16,7 +16,10 @@ BALE_API = "https://tapi.bale.ai/bot{token}/{method}"
 CHANNEL_LABELS = {
     "telegram": "تلگرام",
     "bale": "بله",
+    "eitaa": "ایتا",
 }
+
+EITAAYAR_API = "https://eitaayar.ir/api/{token}/{method}"
 
 _bot_username_cache: dict[str, str | None] = {}
 
@@ -232,12 +235,145 @@ class BaleBotClient(TelegramBotClient):
             payload["reply_markup"] = reply_markup
         self._call("sendMessage", payload)
 
+
+def normalize_eitaa_chat_id(value: str) -> str:
+    raw = str(value or "").strip()
+    for prefix in (
+        "https://eitaa.com/",
+        "http://eitaa.com/",
+        "https://www.eitaa.com/",
+        "http://www.eitaa.com/",
+        "eitaa.com/",
+    ):
+        if raw.lower().startswith(prefix):
+            raw = raw[len(prefix) :]
+            break
+    return raw.strip().lstrip("@").strip().strip("/")
+
+
+class EitaaBotClient:
+    """Eitaayar one-way channel/group sender (no interactive bot API yet)."""
+
+    channel = "eitaa"
+    link_mode = "channel_only"
+
+    def __init__(
+        self,
+        bot_token: str,
+        chat_id: str = "0",
+        send_photos: bool = True,
+        delay_seconds: float = 0.8,
+        timeout: int = 30,
+    ) -> None:
+        self.bot_token = bot_token
+        self.chat_id = chat_id
+        self.send_photos = send_photos
+        self.delay_seconds = delay_seconds
+        self.timeout = timeout
+        self.session = requests.Session()
+
+    def bot_username(self) -> str | None:
+        return None
+
+    def bot_deep_link(self, payload: str = "link") -> str:
+        return ""
+
+    def get_updates(self, offset: int = 0, timeout: int = 25) -> list[dict[str, Any]]:
+        return []
+
+    def _call_form(self, method: str, data: dict[str, Any], files: dict | None = None) -> dict[str, Any]:
+        url = EITAAYAR_API.format(token=self.bot_token, method=method)
+        response = self.session.post(url, data=data, files=files, timeout=self.timeout)
+        response.raise_for_status()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError("پاسخ نامعتبر ایتایار") from exc
+        if isinstance(payload, dict) and payload.get("ok") is False:
+            raise RuntimeError(payload.get("description") or "خطای ایتایار")
+        time.sleep(self.delay_seconds)
+        return payload if isinstance(payload, dict) else {"ok": True, "result": payload}
+
+    def send_text(
+        self,
+        text: str,
+        reply_markup: dict[str, Any] | None = None,
+        chat_id: str | None = None,
+    ) -> None:
+        import re
+
+        cleaned = re.sub(r"<br\s*/?>", "\n", str(text or ""), flags=re.I)
+        cleaned = re.sub(r"</?a\b[^>]*>", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"</?[^>]+>", "", cleaned)
+        target = normalize_eitaa_chat_id(str(chat_id or self.chat_id))
+        if not target:
+            raise RuntimeError("شناسه کانال ایتا خالی است.")
+        self._call_form(
+            "sendmessage",
+            {
+                "chat_id": target,
+                "text": cleaned,
+            },
+        )
+
+    def send_listing(
+        self,
+        listing: Listing,
+        rank: int | None = None,
+        reason: str | None = None,
+        chat_id: str | None = None,
+    ) -> None:
+        from notifier import format_listing_plain
+        import tempfile
+        from pathlib import Path
+
+        caption = format_listing_plain(listing, rank=rank, reason=reason)
+        target = normalize_eitaa_chat_id(str(chat_id or self.chat_id))
+        if not target:
+            raise RuntimeError("شناسه کانال ایتا خالی است.")
+        if self.send_photos and listing.image_url:
+            tmp_path: Path | None = None
+            try:
+                img = self.session.get(str(listing.image_url), timeout=20)
+                img.raise_for_status()
+                suffix = ".jpg"
+                ctype = (img.headers.get("Content-Type") or "").lower()
+                if "png" in ctype:
+                    suffix = ".png"
+                elif "webp" in ctype:
+                    suffix = ".webp"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                    tmp.write(img.content)
+                    tmp_path = Path(tmp.name)
+                with tmp_path.open("rb") as fh:
+                    self._call_form(
+                        "sendfile",
+                        {"chat_id": target, "caption": caption[:1024]},
+                        files={"file": (tmp_path.name, fh)},
+                    )
+                return
+            except Exception:
+                pass
+            finally:
+                if tmp_path is not None:
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+        self.send_text(caption, chat_id=target)
+
+
 def messenger_env_token(channel: str) -> str:
     ch = str(channel or "").strip().lower()
     if ch == "telegram":
         return os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if ch == "bale":
         return os.getenv("BALE_BOT_TOKEN", "").strip()
+    if ch == "eitaa":
+        return (
+            os.getenv("EITAAYAR_TOKEN", "").strip()
+            or os.getenv("EITAA_BOT_TOKEN", "").strip()
+        )
     return os.getenv(f"{ch.upper()}_BOT_TOKEN", "").strip()
 
 
@@ -252,12 +388,14 @@ def messenger_configs(config: dict[str, Any] | None = None) -> list[dict[str, An
     for channel, cls, deep_hint in (
         ("telegram", TelegramBotClient, "t.me"),
         ("bale", BaleBotClient, "ble.ir"),
+        ("eitaa", EitaaBotClient, "eitaa.com"),
     ):
         token = messenger_env_token(channel)
         if not token:
             continue
         client = cls(bot_token=token, chat_id="0", send_photos=send_photos, delay_seconds=delay)
         username = client.bot_username()
+        link_mode = getattr(cls, "link_mode", "bot")
         out.append(
             {
                 "channel": channel,
@@ -266,6 +404,7 @@ def messenger_configs(config: dict[str, Any] | None = None) -> list[dict[str, An
                 "bot_username": username,
                 "deep_link": client.bot_deep_link("link") if username else "",
                 "deep_hint": deep_hint,
+                "link_mode": link_mode,
                 "client_cls": cls,
                 "token": token,
                 "send_photos": send_photos,
@@ -293,6 +432,8 @@ def build_messenger(channel: str, config: dict[str, Any] | None = None) -> Messe
         return TelegramBotClient(**kwargs)
     if ch == "bale":
         return BaleBotClient(**kwargs)
+    if ch == "eitaa":
+        return EitaaBotClient(**kwargs)
     raise AppError(f"پیام‌رسان ناشناخته: {ch}")
 
 
@@ -308,9 +449,20 @@ def public_messenger_payload(user: dict[str, Any] | None = None) -> list[dict[st
             "account_id": user.get("telegram_chat_id"),
             "username": user.get("telegram_username") or "",
         }
+    eitaa_chats = []
+    if user:
+        import db
+
+        eitaa_chats = [
+            c for c in db.list_user_chats(user["id"], channel="eitaa") if c.get("id")
+        ]
     payload = []
     for item in messenger_configs():
         acc = accounts.get(item["channel"])
+        link_mode = item.get("link_mode") or "bot"
+        linked = bool(acc and acc.get("account_id"))
+        if item["channel"] == "eitaa":
+            linked = bool(eitaa_chats)
         payload.append(
             {
                 "channel": item["channel"],
@@ -318,9 +470,15 @@ def public_messenger_payload(user: dict[str, Any] | None = None) -> list[dict[st
                 "enabled": True,
                 "bot_username": item["bot_username"],
                 "deep_link": item["deep_link"],
-                "linked": bool(acc and acc.get("account_id")),
+                "link_mode": link_mode,
+                "linked": linked,
                 "account_id": (acc or {}).get("account_id") or "",
                 "username": (acc or {}).get("username") or "",
+                "hint": (
+                    "فقط ارسال به کانال/گروه. @sender را ادمین کنید و شناسه کانال را در مقصد فیلتر وارد کنید."
+                    if link_mode == "channel_only"
+                    else ""
+                ),
             }
         )
     return payload
@@ -329,6 +487,7 @@ def public_messenger_payload(user: dict[str, Any] | None = None) -> list[dict[st
 # Aliases matching plan naming
 TelegramMessenger = TelegramBotClient
 BaleMessenger = BaleBotClient
+EitaaMessenger = EitaaBotClient
 
 
 def collect_broadcast_targets(

@@ -129,9 +129,10 @@
         <div class="dest-add-row">
           <select id="dest-channel"></select>
           <select id="dest-chat"></select>
+          <input id="dest-eitaa-id" type="text" dir="ltr" placeholder="شناسه کانال ایتا (بدون @)" hidden>
           <button type="button" class="ghost small" id="dest-add-btn">افزودن</button>
         </div>
-        <p class="hint">اول پیام‌رسان، بعد چت. می‌توانید چند مقصد از چند پیام‌رسان اضافه کنید.</p>
+        <p class="hint" id="dest-hint">اول پیام‌رسان، بعد چت. می‌توانید چند مقصد از چند پیام‌رسان اضافه کنید.</p>
       </div>
       <input type="hidden" name="chat_id" id="filter-chat" value="">
       <div class="row">
@@ -179,6 +180,6 @@
   </dialog>
 
   <script src="/dates.js?v=1"></script>
-  <script src="/portal.js?v=12"></script>
+  <script src="/portal.js?v=13"></script>
 </body>
 </html>

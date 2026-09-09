@@ -2511,6 +2511,10 @@ def set_filter_destinations(
     for item in destinations or []:
         ch = str(item.get("channel") or "telegram").strip().lower() or "telegram"
         cid = str(item.get("chat_id") or "").strip()
+        if ch == "eitaa":
+            from messengers import normalize_eitaa_chat_id
+
+            cid = normalize_eitaa_chat_id(cid)
         if not cid:
             continue
         key = (ch, cid)
@@ -2542,6 +2546,19 @@ def set_filter_destinations(
             conn.commit()
         finally:
             conn.close()
+    for ch, cid, enabled in cleaned:
+        if ch == "eitaa" and enabled:
+            try:
+                upsert_user_chat(
+                    user_id,
+                    channel="eitaa",
+                    chat_id=cid,
+                    chat_type="channel",
+                    name=cid,
+                    username=cid,
+                )
+            except Exception:
+                pass
     return list_filter_destinations(filter_id)
 
 
@@ -2556,6 +2573,10 @@ def resolve_filter_destinations(user: dict[str, Any], spec: dict[str, Any]) -> l
             continue
         ch = str(item.get("channel") or "telegram").strip().lower() or "telegram"
         cid = str(item.get("chat_id") or "").strip()
+        if ch == "eitaa":
+            from messengers import normalize_eitaa_chat_id
+
+            cid = normalize_eitaa_chat_id(cid)
         if cid:
             out.append({"channel": ch, "chat_id": cid})
     if out:

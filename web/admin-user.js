@@ -17,7 +17,7 @@ const WATCH_STATUS = {
   skipped: "رد شده",
 };
 const WATCH_CHANNEL = { telegram: "تلگرام", bale: "بله", email: "ایمیل", sms: "پیامک" };
-const CHANNEL_LABELS = { telegram: "تلگرام", bale: "بله" };
+const CHANNEL_LABELS = { telegram: "تلگرام", bale: "بله", eitaa: "ایتا" };
 const WATCH_PLATFORM = { divar: "دیوار" };
 
 const els = {
