@@ -91,7 +91,13 @@ def best_count(config: dict[str, Any] | None = None, user: dict[str, Any] | None
     return user_best_count(user, config)
 
 
-def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[str, Any]:
+def send_best_for_user(
+    user: dict[str, Any],
+    count: int | None = None,
+    *,
+    reply_channel: str | None = None,
+    reply_chat_id: str | None = None,
+) -> dict[str, Any]:
     from messengers import messenger_client_for_user
 
     if not user.get("ai_enabled"):
@@ -104,17 +110,36 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
     wanted = count if count is not None else best_count(config, user)
     chosen, source = pick_best_ai(listings, wanted)
     by_id = {str(spec.get("id")): spec for spec in specs}
-    dests: list[dict[str, str]] = []
-    seen_dest: set[tuple[str, str]] = set()
-    for spec in specs:
-        for d in db.resolve_filter_destinations(user, spec):
-            key = (d["channel"], d["chat_id"])
-            if key in seen_dest:
-                continue
-            seen_dest.add(key)
-            dests.append(d)
-    if not dests:
+
+    reply_ch = str(reply_channel or "").strip().lower() or None
+    reply_cid = str(reply_chat_id or "").strip() or None
+    # Bot-triggered best: reply only to the chat that asked.
+    if reply_ch and reply_cid:
+        target_dests = [{"channel": reply_ch, "chat_id": reply_cid}]
+    else:
+        # Web/API: only destinations belonging to filters that produced chosen items.
+        target_dests = []
+        seen_dest: set[tuple[str, str]] = set()
+        for item, _reason in chosen:
+            spec = by_id.get(str(item.filter_id)) or {}
+            for d in db.resolve_filter_destinations(user, spec):
+                key = (d["channel"], d["chat_id"])
+                if key in seen_dest:
+                    continue
+                seen_dest.add(key)
+                target_dests.append(d)
+        if not target_dests and not chosen:
+            # No results: still need somewhere to say so — prefer linked private chats.
+            for d in _fallback_reply_dests(user, specs):
+                key = (d["channel"], d["chat_id"])
+                if key in seen_dest:
+                    continue
+                seen_dest.add(key)
+                target_dests.append(d)
+
+    if not target_dests:
         raise AppError("هیچ مقصد ارسالی لینک نشده است.")
+
     clients: dict[str, Any] = {}
     label = "با مدل زبانی" if source == "ai" else "با رتبه‌بندی ساده"
     header = (
@@ -128,24 +153,28 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
             clients[channel] = messenger_client_for_user(user, channel, config)
         return clients[channel]
 
-    for dest in dests:
-        channel = dest["channel"]
-        chat_id = dest["chat_id"]
+    for dest in target_dests:
         try:
-            client_for(channel).send_text(header, chat_id=chat_id)
+            client_for(dest["channel"]).send_text(header, chat_id=dest["chat_id"])
         except Exception:
             continue
     if not chosen:
         return {"sent": 0, "found": 0, "listings": [], "message": "No matching listings."}
+
     sent = 0
     for index, (item, reason) in enumerate(chosen, start=1):
-        spec = by_id.get(str(item.filter_id)) or {}
-        item_dests = db.resolve_filter_destinations(user, spec) or dests
+        if reply_ch and reply_cid:
+            item_dests = target_dests
+        else:
+            spec = by_id.get(str(item.filter_id)) or {}
+            item_dests = db.resolve_filter_destinations(user, spec)
+            if not item_dests:
+                continue
         for dest in item_dests:
-            channel = dest["channel"]
-            chat_id = dest["chat_id"]
             try:
-                client_for(channel).send_listing(item, rank=index, reason=reason, chat_id=chat_id)
+                client_for(dest["channel"]).send_listing(
+                    item, rank=index, reason=reason, chat_id=dest["chat_id"]
+                )
                 sent += 1
             except Exception:
                 continue
@@ -158,6 +187,22 @@ def send_best_for_user(user: dict[str, Any], count: int | None = None) -> dict[s
         "message": f"Sent top {len(chosen)} of {len(listings)} listings ({source}).",
         "filters": [spec.get("name") for spec in specs],
     }
+
+
+def _fallback_reply_dests(user: dict[str, Any], specs: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Used only when best has no results and we need somewhere to report that."""
+    for spec in specs:
+        dests = db.resolve_filter_destinations(user, spec)
+        if dests:
+            return dests[:1]
+    for acc in user.get("messenger_accounts") or []:
+        aid = str(acc.get("account_id") or "").strip()
+        if aid:
+            return [{"channel": str(acc.get("channel") or "telegram"), "chat_id": aid}]
+    tg = str(user.get("telegram_chat_id") or "").strip()
+    if tg:
+        return [{"channel": "telegram", "chat_id": tg}]
+    return []
 
 
 def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
