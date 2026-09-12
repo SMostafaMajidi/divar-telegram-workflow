@@ -67,3 +67,9 @@ DELETE /api/devices/{token}
 FCM_DRY_RUN=1 python scripts/test_fcm_push.py --token SAMPLE_TOKEN
 ```
 
+## اپ اندروید
+
+دانلود APK از سایت: [/download/android](/download/android)
+
+فایل در `web/downloads/workflow.apk` نگه داشته می‌شود (کپی از بیلد `../workflow_app`).
+
