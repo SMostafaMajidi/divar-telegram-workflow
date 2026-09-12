@@ -43,9 +43,50 @@ from plans import has_api_access
 import db
 
 WEB_DIR = ROOT / "web"
+DOWNLOADS_DIR = WEB_DIR / "downloads"
+
+
+def android_apk_path() -> Path | None:
+    """Prefer packaged APK under web/downloads; fall back to sibling workflow_app build."""
+    candidates = [
+        DOWNLOADS_DIR / "workflow.apk",
+        ROOT.parent / "workflow_app" / "app" / "build" / "outputs" / "apk" / "release" / "app-release.apk",
+        ROOT.parent
+        / "workflow_app"
+        / "app"
+        / "build"
+        / "outputs"
+        / "apk"
+        / "debug"
+        / "app-debug.apk",
+    ]
+    for path in candidates:
+        try:
+            if path.is_file():
+                return path
+        except OSError:
+            continue
+    return None
+
+
 BOT = MessengerBot("telegram")
 BALE_BOT = MessengerBot("bale")
 BOTS = (BOT, BALE_BOT)
+
+# Simple in-memory rate limit for device token registration (per user).
+_device_register_hits: dict[str, list[float]] = {}
+_DEVICE_REGISTER_LIMIT = 20
+_DEVICE_REGISTER_WINDOW = 60.0
+
+
+def _rate_limit_device_register(user_id: str) -> None:
+    now = time.time()
+    hits = [t for t in _device_register_hits.get(user_id, []) if now - t < _DEVICE_REGISTER_WINDOW]
+    if len(hits) >= _DEVICE_REGISTER_LIMIT:
+        raise AppError("ثبت دستگاه بیش از حد مجاز است؛ کمی بعد دوباره تلاش کنید.")
+    hits.append(now)
+    _device_register_hits[user_id] = hits
+
 
 
 class Watcher:
@@ -159,6 +200,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             return
+        if path in {"/download/android", "/downloads/workflow.apk", "/app-android.apk"}:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.android.package-archive")
+            self.end_headers()
+            return
         if path.startswith("/api/"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -180,6 +226,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         query = parse_qs(parsed.query)
         try:
+            if path in {"/download/android", "/downloads/workflow.apk", "/app-android.apk"}:
+                return self._send_android_apk()
             if path == "/":
                 if self._cookie("session") and db.get_session_user(self._cookie("session")):
                     self.send_response(302)
@@ -333,6 +381,8 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 status["next_watch_at"] = WATCHER.next_run_at or None
                 status["user_count"] = len(db.list_users())
+                status["android_apk"] = bool(android_apk_path())
+                status["android_download_url"] = "/download/android" if android_apk_path() else ""
                 return self._json(status)
             if path == "/api/cities":
                 q = (query.get("q") or [""])[0]
@@ -468,6 +518,9 @@ class Handler(BaseHTTPRequestHandler):
                 user = self._require_user()
                 channel = (query.get("channel") or [""])[0].strip() or None
                 return self._json({"chats": db.list_user_chats(user["id"], channel=channel)})
+            if path == "/api/devices":
+                user = self._require_user()
+                return self._json({"devices": db.list_user_devices(user["id"])})
             if path == "/api/filters":
                 user = self._require_user()
                 return self._json({"filters": [filter_to_api(spec) for spec in db.list_filters(user["id"])]})
@@ -860,6 +913,20 @@ class Handler(BaseHTTPRequestHandler):
                 ticket_id = parts[5]
                 ticket = db.set_ticket_status(ticket_id, "closed", user_id=user_id)
                 return self._json({"ticket": ticket})
+            if path == "/api/devices/register":
+                user = self._require_user()
+                _rate_limit_device_register(user["id"])
+                device = db.register_device_token(
+                    user["id"],
+                    str(body.get("token") or ""),
+                    platform=str(body.get("platform") or "android"),
+                    package=str(body.get("package") or body.get("app_id") or "") or None,
+                )
+                return self._json({"ok": True, "device": device}, 201)
+            if path == "/api/devices/unregister":
+                user = self._require_user()
+                removed = db.unregister_device_token(user["id"], str(body.get("token") or ""))
+                return self._json({"ok": True, "removed": removed})
             if path == "/api/logout":
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -946,6 +1013,13 @@ class Handler(BaseHTTPRequestHandler):
                 user = self._require_user()
                 db.delete_filter(path.rsplit("/", 1)[-1], user["id"])
                 return self._json({"ok": True})
+            if path.startswith("/api/devices/"):
+                user = self._require_user()
+                token = unquote(path[len("/api/devices/"):].strip("/"))
+                if not token or token in {"register", "unregister"}:
+                    raise AppError("توکن دستگاه نامعتبر است.")
+                removed = db.unregister_device_token(user["id"], token)
+                return self._json({"ok": True, "removed": removed})
             return self._json({"error": "Not found."}, 404)
         except Exception as exc:
             self._handle_error(exc)
@@ -1125,6 +1199,23 @@ class Handler(BaseHTTPRequestHandler):
                 fields[name] = content.decode("utf-8", errors="ignore")
         return fields, files
 
+
+    def _send_android_apk(self) -> None:
+        apk = android_apk_path()
+        if not apk:
+            raise AppError("فایل اپ اندروید هنوز روی سرور قرار نگرفته است.")
+        payload = apk.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.android.package-archive")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="divar-watcher.apk"',
+        )
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.end_headers()
+        self.wfile.write(payload)
+
     def _file(self, path: Path) -> None:
         if not path.is_file() or WEB_DIR not in path.resolve().parents and path.parent != WEB_DIR:
             return self._json({"error": "Not found."}, 404)
@@ -1188,6 +1279,8 @@ def _admin_user(user: dict) -> dict:
         "default_poll_interval_minutes": poll_interval_minutes(config),
         "default_best_count": user_best_count(None, config),
         "filter_count": db.user_filter_count(user["id"]),
+        "device_count": db.count_user_devices(user["id"], enabled_only=False),
+        "device_count_enabled": db.count_user_devices(user["id"], enabled_only=True),
         "eitaa": _eitaa_payload(user["id"]),
         "capabilities": user_capabilities(user),
     }

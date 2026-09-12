@@ -1,2 +1,6 @@
 requests>=2.32.0
 PyYAML>=6.0.2
+
+# Optional for FCM HTTP v1 (otherwise openssl/cryptography fallback is used):
+# google-auth>=2.0.0
+
