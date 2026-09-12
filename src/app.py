@@ -47,6 +47,21 @@ BOT = MessengerBot("telegram")
 BALE_BOT = MessengerBot("bale")
 BOTS = (BOT, BALE_BOT)
 
+# Simple in-memory rate limit for device token registration (per user).
+_device_register_hits: dict[str, list[float]] = {}
+_DEVICE_REGISTER_LIMIT = 20
+_DEVICE_REGISTER_WINDOW = 60.0
+
+
+def _rate_limit_device_register(user_id: str) -> None:
+    now = time.time()
+    hits = [t for t in _device_register_hits.get(user_id, []) if now - t < _DEVICE_REGISTER_WINDOW]
+    if len(hits) >= _DEVICE_REGISTER_LIMIT:
+        raise AppError("ثبت دستگاه بیش از حد مجاز است؛ کمی بعد دوباره تلاش کنید.")
+    hits.append(now)
+    _device_register_hits[user_id] = hits
+
+
 
 class Watcher:
     def __init__(self) -> None:
@@ -468,6 +483,9 @@ class Handler(BaseHTTPRequestHandler):
                 user = self._require_user()
                 channel = (query.get("channel") or [""])[0].strip() or None
                 return self._json({"chats": db.list_user_chats(user["id"], channel=channel)})
+            if path == "/api/devices":
+                user = self._require_user()
+                return self._json({"devices": db.list_user_devices(user["id"])})
             if path == "/api/filters":
                 user = self._require_user()
                 return self._json({"filters": [filter_to_api(spec) for spec in db.list_filters(user["id"])]})
@@ -860,6 +878,20 @@ class Handler(BaseHTTPRequestHandler):
                 ticket_id = parts[5]
                 ticket = db.set_ticket_status(ticket_id, "closed", user_id=user_id)
                 return self._json({"ticket": ticket})
+            if path == "/api/devices/register":
+                user = self._require_user()
+                _rate_limit_device_register(user["id"])
+                device = db.register_device_token(
+                    user["id"],
+                    str(body.get("token") or ""),
+                    platform=str(body.get("platform") or "android"),
+                    package=str(body.get("package") or body.get("app_id") or "") or None,
+                )
+                return self._json({"ok": True, "device": device}, 201)
+            if path == "/api/devices/unregister":
+                user = self._require_user()
+                removed = db.unregister_device_token(user["id"], str(body.get("token") or ""))
+                return self._json({"ok": True, "removed": removed})
             if path == "/api/logout":
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -946,6 +978,13 @@ class Handler(BaseHTTPRequestHandler):
                 user = self._require_user()
                 db.delete_filter(path.rsplit("/", 1)[-1], user["id"])
                 return self._json({"ok": True})
+            if path.startswith("/api/devices/"):
+                user = self._require_user()
+                token = unquote(path[len("/api/devices/"):].strip("/"))
+                if not token or token in {"register", "unregister"}:
+                    raise AppError("توکن دستگاه نامعتبر است.")
+                removed = db.unregister_device_token(user["id"], token)
+                return self._json({"ok": True, "removed": removed})
             return self._json({"error": "Not found."}, 404)
         except Exception as exc:
             self._handle_error(exc)
@@ -1188,6 +1227,8 @@ def _admin_user(user: dict) -> dict:
         "default_poll_interval_minutes": poll_interval_minutes(config),
         "default_best_count": user_best_count(None, config),
         "filter_count": db.user_filter_count(user["id"]),
+        "device_count": db.count_user_devices(user["id"], enabled_only=False),
+        "device_count_enabled": db.count_user_devices(user["id"], enabled_only=True),
         "eitaa": _eitaa_payload(user["id"]),
         "capabilities": user_capabilities(user),
     }

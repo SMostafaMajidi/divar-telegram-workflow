@@ -36,3 +36,34 @@ Authorization: Basic base64(username:password)
 ## ادمین
 
 ورود با `ADMIN_USERNAME` / `ADMIN_PASSWORD`. مدیریت مشتریان و تنظیمات سراسری از `/admin`.
+
+## پوش نوتیف اندروید (FCM)
+
+وقتی پایش آگهی تازه پیدا کند، علاوه بر تلگرام/بله/ایتا، به همهٔ دستگاه‌های ثبت‌شدهٔ همان کاربر push می‌زند (مستقل از `filter_destinations`).
+
+کانفیگ در `.env`:
+
+- `FCM_SERVICE_ACCOUNT_FILE` + `FCM_PROJECT_ID` (HTTP v1، پیشنهادی)
+- یا `FCM_SERVER_KEY` (legacy)
+- `FCM_DRY_RUN=1` برای تست بدون تماس با Google
+
+اگر FCM تنظیم نباشد، پایش مثل قبل ادامه می‌دهد و فقط push را رد می‌کند.
+
+API مشتری (کوکی `session`):
+
+```http
+POST /api/devices/register
+{"token":"<fcm>","platform":"android","package":"ir.rysh.workflow"}
+
+GET /api/devices
+POST /api/devices/unregister
+{"token":"<fcm>"}
+DELETE /api/devices/{token}
+```
+
+تست دستی:
+
+```bash
+FCM_DRY_RUN=1 python scripts/test_fcm_push.py --token SAMPLE_TOKEN
+```
+

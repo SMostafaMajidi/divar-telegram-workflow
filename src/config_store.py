@@ -460,6 +460,24 @@ def payment_info() -> dict[str, Any]:
     }
 
 
+def _fcm_configured_flag() -> bool:
+    try:
+        from fcm import fcm_configured
+
+        return bool(fcm_configured())
+    except Exception:
+        return False
+
+
+def _fcm_mode_flag() -> str:
+    try:
+        from fcm import fcm_mode
+
+        return str(fcm_mode())
+    except Exception:
+        return "off"
+
+
 def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     config = config or load_config()
     load_dotenv()
@@ -481,6 +499,8 @@ def public_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "bot_username": telegram_bot_username(token) if token else None,
         "llm_ready": bool((os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()),
         "llm_model": (os.getenv("LLM_MODEL") or "gpt-4o-mini").strip(),
+        "fcm_configured": _fcm_configured_flag(),
+        "fcm_mode": _fcm_mode_flag(),
         "public_base_url": public_base_url(),
         "admin_configured": bool(admin_username() and admin_password()) or bool(admin_token()),
         "payment": pay,

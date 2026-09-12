@@ -274,8 +274,9 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                 for item in newest
                 if not db.is_seen(user["id"], filter_id, item.token)
             ]
+            devices = db.list_enabled_device_tokens(user["id"])
 
-            if not destinations:
+            if not destinations and not devices:
                 db.log_watch_event(
                     user["id"],
                     action="scan",
@@ -290,6 +291,12 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                 )
                 continue
 
+            scan_channel = destinations[0]["channel"] if destinations else "app"
+            dest_label = (
+                ",".join(f"{d['channel']}:{d['chat_id']}" for d in destinations)
+                if destinations
+                else f"app:devices:{len(devices)}"
+            )
             db.log_watch_event(
                 user["id"],
                 action="scan",
@@ -297,12 +304,13 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                 filter_id=filter_id,
                 filter_name=filter_name,
                 platform="divar",
-                channel=destinations[0]["channel"],
+                channel=scan_channel,
                 found_count=len(listings),
                 new_count=len(fresh),
-                destination=",".join(f"{d['channel']}:{d['chat_id']}" for d in destinations),
+                destination=dest_label,
                 message=(
                     f"جستجو: {len(listings)} آگهی · تازه: {len(fresh)} · مقصدها: {len(destinations)}"
+                    + (f" · اپ: {len(devices)}" if devices else "")
                     if fresh
                     else f"جستجو: {len(listings)} آگهی · آگهی تازه نبود"
                 ),
@@ -371,6 +379,38 @@ def watch_tick(user_ids: list[str] | None = None) -> dict[str, Any]:
                     message=message,
                     detail={"failed": failed, "error": last_error} if failed else {},
                 )
+
+            # Always push to registered Android devices when fresh listings exist
+            # (independent of filter_destinations). Messengers stay destination-based.
+            if devices:
+                try:
+                    from fcm import push_fresh_listings
+
+                    push_result = push_fresh_listings(
+                        user["id"],
+                        filter_id=filter_id,
+                        filter_name=filter_name,
+                        listings=fresh,
+                        devices=devices,
+                    )
+                    sent += int(push_result.get("sent") or 0)
+                    if int(push_result.get("sent") or 0) > 0:
+                        any_delivered = True
+                except Exception as exc:
+                    db.log_watch_event(
+                        user["id"],
+                        action="deliver",
+                        status="failure",
+                        filter_id=filter_id,
+                        filter_name=filter_name,
+                        platform="divar",
+                        channel="app",
+                        found_count=len(listings),
+                        new_count=len(fresh),
+                        destination=f"devices:{len(devices)}",
+                        message=f"push خطا: {exc}",
+                        detail={"error": str(exc)},
+                    )
 
             if any_delivered or fresh:
                 # Mark seen once after attempting all destinations to avoid re-spam.

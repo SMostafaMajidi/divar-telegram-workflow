@@ -314,6 +314,24 @@ def init_db(path: Path | None = None) -> None:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_support_messages_ticket ON support_messages(ticket_id, created_at ASC)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS device_tokens (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    token TEXT NOT NULL UNIQUE,
+                    platform TEXT NOT NULL DEFAULT 'android',
+                    app_id TEXT,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id, enabled)"
+            )
             _migrate_messenger_schema(conn)
             _migrate_plan_caps(conn)
             _seed_plans(conn)
@@ -3106,3 +3124,196 @@ def set_ticket_status(ticket_id: str, status: str, *, user_id: str | None = None
     found = get_ticket(ticket_id, user_id)
     assert found
     return found
+
+
+def _device_row_public(row: sqlite3.Row | dict[str, Any], *, include_token: bool = False) -> dict[str, Any]:
+    data = dict(row)
+    token = str(data.get("token") or "")
+    out: dict[str, Any] = {
+        "id": data["id"],
+        "platform": data.get("platform") or "android",
+        "package": data.get("app_id") or "",
+        "enabled": bool(int(data.get("enabled") or 0)),
+        "created_at": data.get("created_at") or "",
+        "updated_at": data.get("updated_at") or "",
+        "last_seen_at": data.get("last_seen_at") or "",
+        "token_masked": mask_secret(token),
+    }
+    if include_token:
+        out["token"] = token
+    return out
+
+
+def register_device_token(
+    user_id: str,
+    token: str,
+    *,
+    platform: str = "android",
+    package: str | None = None,
+) -> dict[str, Any]:
+    raw = str(token or "").strip()
+    if not raw or len(raw) < 32:
+        raise AppError("توکن دستگاه نامعتبر است.")
+    if len(raw) > 4096:
+        raise AppError("توکن دستگاه خیلی طولانی است.")
+    plat = str(platform or "android").strip().lower() or "android"
+    if plat not in {"android", "ios", "web"}:
+        raise AppError("platform باید android باشد.")
+    app_id = str(package or "").strip() or None
+    if app_id and len(app_id) > 200:
+        raise AppError("package نامعتبر است.")
+    device_id = uuid.uuid4().hex[:12]
+    now = _now()
+    with _lock:
+        conn = connect()
+        try:
+            existing = conn.execute(
+                "SELECT id, user_id FROM device_tokens WHERE token = ?",
+                (raw,),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE device_tokens
+                    SET user_id = ?, platform = ?, app_id = COALESCE(?, app_id),
+                        enabled = 1, updated_at = ?, last_seen_at = ?
+                    WHERE token = ?
+                    """,
+                    (user_id, plat, app_id, now, now, raw),
+                )
+                row = conn.execute(
+                    "SELECT * FROM device_tokens WHERE token = ?",
+                    (raw,),
+                ).fetchone()
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO device_tokens (
+                        id, user_id, token, platform, app_id, enabled,
+                        created_at, updated_at, last_seen_at
+                    ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+                    """,
+                    (device_id, user_id, raw, plat, app_id, now, now, now),
+                )
+                row = conn.execute(
+                    "SELECT * FROM device_tokens WHERE id = ?",
+                    (device_id,),
+                ).fetchone()
+            conn.commit()
+            assert row is not None
+            return _device_row_public(row)
+        finally:
+            conn.close()
+
+
+def unregister_device_token(user_id: str, token: str) -> bool:
+    raw = str(token or "").strip()
+    if not raw:
+        raise AppError("توکن دستگاه خالی است.")
+    with _lock:
+        conn = connect()
+        try:
+            cur = conn.execute(
+                "DELETE FROM device_tokens WHERE user_id = ? AND token = ?",
+                (user_id, raw),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+
+def delete_device_token_by_value(token: str) -> bool:
+    """Remove a token regardless of owner (invalid / UNREGISTERED from FCM)."""
+    raw = str(token or "").strip()
+    if not raw:
+        return False
+    with _lock:
+        conn = connect()
+        try:
+            cur = conn.execute("DELETE FROM device_tokens WHERE token = ?", (raw,))
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+
+def disable_device_token(token: str) -> bool:
+    raw = str(token or "").strip()
+    if not raw:
+        return False
+    with _lock:
+        conn = connect()
+        try:
+            cur = conn.execute(
+                "UPDATE device_tokens SET enabled = 0, updated_at = ? WHERE token = ?",
+                (_now(), raw),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+
+def list_user_devices(user_id: str, *, enabled_only: bool = False) -> list[dict[str, Any]]:
+    with _lock:
+        conn = connect()
+        try:
+            if enabled_only:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM device_tokens
+                    WHERE user_id = ? AND enabled = 1
+                    ORDER BY updated_at DESC, rowid DESC
+                    """,
+                    (user_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM device_tokens
+                    WHERE user_id = ?
+                    ORDER BY updated_at DESC, rowid DESC
+                    """,
+                    (user_id,),
+                ).fetchall()
+            return [_device_row_public(row) for row in rows]
+        finally:
+            conn.close()
+
+
+def list_enabled_device_tokens(user_id: str) -> list[dict[str, Any]]:
+    """Internal: include full token for FCM delivery."""
+    with _lock:
+        conn = connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM device_tokens
+                WHERE user_id = ? AND enabled = 1
+                ORDER BY updated_at DESC, rowid DESC
+                """,
+                (user_id,),
+            ).fetchall()
+            return [_device_row_public(row, include_token=True) for row in rows]
+        finally:
+            conn.close()
+
+
+def count_user_devices(user_id: str, *, enabled_only: bool = True) -> int:
+    with _lock:
+        conn = connect()
+        try:
+            if enabled_only:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS c FROM device_tokens WHERE user_id = ? AND enabled = 1",
+                    (user_id,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS c FROM device_tokens WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+            return int(row["c"] if row else 0)
+        finally:
+            conn.close()
